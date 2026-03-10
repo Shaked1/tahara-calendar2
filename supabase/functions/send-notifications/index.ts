@@ -1,6 +1,6 @@
 // supabase/functions/send-notifications/index.ts
 
-import { createClient } from 'https://esm.sh/@supabase/supabase-client@2'
+import { createClient } from 'https://deno.land/x/supabase_js@v2.39.8/mod.ts'
 
 const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY')
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')

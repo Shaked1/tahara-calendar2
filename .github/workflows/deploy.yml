@@ -3,7 +3,7 @@ name: Deploy Edge Function
 on:
   push:
     branches:
-      - main  # ודאי שהענף שלך אכן נקרא main ולא master
+      - main
 
 jobs:
   deploy:
@@ -15,6 +15,8 @@ jobs:
 
       - name: Setup Supabase CLI
         uses: supabase/setup-cli@v1
+        with:
+          version: latest  # חשוב להשתמש בגרסה האחרונה
 
       - name: Deploy Function
         run: supabase functions deploy send-notifications --project-ref btqrmltqiphqvefakyvv --no-verify-jwt
