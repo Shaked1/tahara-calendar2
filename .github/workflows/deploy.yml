@@ -3,7 +3,7 @@ name: Deploy Edge Function
 on:
   push:
     branches:
-      - main
+      - main  # ודאי שזהו שם הענף שלך (אם זה master, שני ל-master)
 
 jobs:
   deploy:
@@ -16,9 +16,10 @@ jobs:
       - name: Setup Supabase CLI
         uses: supabase/setup-cli@v1
         with:
-          version: latest  # חשוב להשתמש בגרסה האחרונה
+          version: latest
 
       - name: Deploy Function
-        run: supabase functions deploy send-notifications --project-ref btqrmltqiphqvefakyvv --no-verify-jwt
+        # הוספנו את הנתיב ל-import-map כדי לפתור את בעיית ה-Module not found
+        run: supabase functions deploy send-notifications --project-ref btqrmltqiphqvefakyvv --no-verify-jwt --import-map supabase/functions/import_map.json
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
