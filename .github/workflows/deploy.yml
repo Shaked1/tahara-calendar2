@@ -1,13 +1,22 @@
-name: Deploy Function
+name: Deploy Edge Function
+
 on:
   push:
-    branches: [ main ]
+    branches:
+      - main  # ודאי שהענף שלך אכן נקרא main ולא master
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
+
     steps:
-      - uses: actions/checkout@v3
-      - uses: supabase/setup-cli@v1
-      - run: supabase functions deploy send-notifications --project-ref btqrmltqiphqvefakyvv --no-verify-jwt
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Setup Supabase CLI
+        uses: supabase/setup-cli@v1
+
+      - name: Deploy Function
+        run: supabase functions deploy send-notifications --project-ref btqrmltqiphqvefakyvv --no-verify-jwt
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
