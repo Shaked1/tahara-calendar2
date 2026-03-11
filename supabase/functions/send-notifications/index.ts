@@ -51,6 +51,24 @@ Deno.serve(async (req) => {
       })
     });
 
+    // בתוך הפונקציה שרצה בשרת (Edge Function)
+      const payload = await req.json();
+      const record = payload.record; // כאן נמצא המידע מהשורה בטבלה
+
+      const res = await fetch('https://api.resend.com/emails', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${Deno.env.get('RESEND_API_KEY')}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          from: 'Tahara Calendar <onboarding@resend.dev>',
+          to: [record.user_email], // <-- כאן הוא מושך את המייל מהטבלה ושולח
+          subject: record.title,
+          html: `<strong>${record.body}</strong>`,
+        }),
+      });
+
     // 3. עדכון שההתראה נשלחה
     await supabase
       .from('scheduled_notifications')

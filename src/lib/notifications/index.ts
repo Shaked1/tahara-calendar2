@@ -241,6 +241,10 @@ export async function saveScheduledNotifications(
     const userId = notifications[0]?.userId;
     if (!userId) return;
 
+    // --- הוספה: קבלת המייל של המשתמשת המחוברת ---
+    const { data: { user } } = await supabase.auth.getUser();
+    const userEmail = user?.email;
+
     // 1. מחיקת התראות ישנות שטרם נשלחו
     await supabase
       .from('scheduled_notifications')
@@ -250,13 +254,13 @@ export async function saveScheduledNotifications(
 
     // 2. הכנת הנתונים למערך
     const dataToInsert = notifications.map(n => {
-      // יצירת אובייקט תאריך ושעה מדויק
       const [hours, minutes] = n.time.split(':').map(Number);
       const scheduledDate = new Date(n.date);
       scheduledDate.setHours(hours, minutes, 0, 0);
 
       return {
         user_id: userId,
+        user_email: userEmail, // --- שמירת המייל בטבלה ---
         scheduled_for: scheduledDate.toISOString(),
         title: n.subject || 'תזכורת טהרה',
         body: n.message,
@@ -265,14 +269,13 @@ export async function saveScheduledNotifications(
       };
     });
 
-    // 3. שמירה ב-Supabase עם Casting למערך any כדי להעלים שגיאות טיפוסים
+    // 3. שמירה ב-Supabase
     const { error: insertError } = await supabase
       .from('scheduled_notifications')
       .insert(dataToInsert as any[]);
 
     if (insertError) throw insertError;
-
-    console.log('✅ Notifications saved successfully');
+    console.log('✅ Notifications saved with email:', userEmail);
 
   } catch (error) {
     console.error('Error saving notifications:', error);
