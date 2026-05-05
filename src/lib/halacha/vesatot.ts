@@ -18,7 +18,7 @@ import {
   getHebrewDayOfMonth,
   formatHebrewDateShort,
 } from '../hebrew-calendar';
-import { determineOnah } from './onot';
+import { determineOnah,oppositeOnah } from './onot';
 
 /**
  * חישוב "יום החודש" - וסת קבועה לפי התאריך העברי
@@ -68,7 +68,7 @@ export function calculateYom30(
  * חישוב הפלגה - המרווח בין שתי וסתות
  * השיטה משתנה לפי הפוסק
  */
-export function calculateHaflagah(
+export function calculateHaflagahFromHistory( // Renamed to indicate it uses full history
   vesetHistory: VesetEvent[],
   hefsekhHistory: HefsekhTahara[],
   settings: HalachicSettings,
@@ -114,51 +114,229 @@ export function calculateHaflagah(
     basedOnEvents: { from: previousVeset, to: latestVeset }
   };
 }
+
 /**
- * מחשב את כל הוסתות הקבועות עבור הווסת האחרונה
+ * חישוב הפלגה עבור זוג וסתות ספציפי.
+ * שימושי לחישוב היסטורי עבור כל מחזור בנפרד.
  */
-export function calculateAllVesatot(
+export function calculateHaflagahForSpecificPair(
+  latestVeset: VesetEvent,
+  previousVeset: VesetEvent,
+  hefsekhHistory: HefsekhTahara[],
+  settings: HalachicSettings,
+  location: UserLocation
+): HaflagahResult | null {
+  let interval: number;
+  let nextDate: Date;
+
+  if (settings.method === 'chabad') {
+    const prevHefsek = hefsekhHistory.find(h => h.vesetEventId === previousVeset.id);
+    if (!prevHefsek) return null;
+
+    interval = Math.floor((latestVeset.date.getTime() - prevHefsek.date.getTime()) / (1000 * 60 * 60 * 24));
+
+    const currentHefsek = hefsekhHistory.find(h => h.vesetEventId === latestVeset.id);
+    if (!currentHefsek) return null;
+
+    nextDate = new Date(currentHefsek.date);
+    nextDate.setDate(nextDate.getDate() + interval);
+    
+  } else {
+    interval = Math.floor((latestVeset.date.getTime() - previousVeset.date.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+    nextDate = new Date(latestVeset.date);
+    nextDate.setDate(nextDate.getDate() + (interval - 1));
+  }
+
+  return {
+    interval,
+    nextDate,
+    onah: latestVeset.onah,
+    basedOnEvents: { from: previousVeset, to: latestVeset }
+  };
+}
+
+/**
+ * מחשב את כל הוסתות (קבועות ותוספות) עבור הווסת האחרונה
+ * (זה ישמש לחיזוי וסתות עתידיות בלבד)
+ */
+export function calculateFutureVesatot( // Renamed
   vesetHistory: VesetEvent[],
   hefsekhHistory: HefsekhTahara[],
   settings: HalachicSettings,
   location: UserLocation
 ): CalculatedVeset[] {
-  if (vesetHistory.length === 0) {
-    return [];
-  }
+  if (vesetHistory.length === 0) return [];
+  const lastVeset = [...vesetHistory].sort((a, b) => b.date.getTime() - a.date.getTime())[0];
+  let allVesatot: CalculatedVeset[] = [];
   
-  const sortedVesatot = [...vesetHistory].sort(
-    (a, b) => b.date.getTime() - a.date.getTime()
-  );
+  // 1. חישוב בסיסי
+  allVesatot.push(calculateYomHachodesh(lastVeset, location));
+  allVesatot.push(calculateYom30(lastVeset, location));
   
-  const lastVeset = sortedVesatot[0];
-  const vesatot: CalculatedVeset[] = [];
-  
-  // 1. יום החודש
-  vesatot.push(calculateYomHachodesh(lastVeset, location));
-  
-  // 2. יום 30
-  vesatot.push(calculateYom30(lastVeset, location));
-  
-  // 3. הפלגה
-  const haflagah = calculateHaflagah(
-    vesetHistory,
-    hefsekhHistory,
-    settings,
-    location
-  );
-  
-  if (haflagah) {
-    vesatot.push({
+  const haflagah = calculateHaflagahFromHistory(vesetHistory, hefsekhHistory, settings, location);
+  if (vesetHistory.length >= 2 && haflagah) { // Ensure there are at least two events for haflagah
+    allVesatot.push({
       type: 'haflagah',
       date: haflagah.nextDate,
       onah: haflagah.onah,
-      reason: `הפלגה: ${haflagah.interval} ימים מהווסת הקודמת`,
+      reason: 'הפלגה',
       isActive: true,
     });
   }
+
+  // 2. תוספות לפי בחירת המשתמשת
+  if (settings.yom31) {
+    const d31 = new Date(lastVeset.date);
+    d31.setDate(d31.getDate() + 30);
+    allVesatot.push({ type: 'yom_30', date: d31, onah: lastVeset.onah, reason: 'יום 31', isActive: true });
+  }
   
-  return vesatot;
+  if (settings.maatLeat) {
+    // 1. קודם כל מחשבים מתי יוצא יום ה-30 המקורי (הוספת 29 ימים מיום הראייה)
+    const day30Date = new Date(lastVeset.date);
+    day30Date.setHours(0, 0, 0, 0);
+    day30Date.setDate(day30Date.getDate() + 29);
+
+    const mlDate = new Date(day30Date);
+    let mlOnah: OnahType;
+
+    if (lastVeset.onah === 'day') {
+      // אם יום ה-30 ביום -> עונה קודמת היא לילה של היום שלפני (מורידים יום)
+      mlDate.setDate(mlDate.getDate() - 1);
+      mlOnah = 'night';
+    } else {
+      // אם יום ה-30 בלילה -> עונה עוקבת היא יום של היום שאחרי (מוסיפים יום)
+      mlDate.setDate(mlDate.getDate() + 1);
+      mlOnah = 'day';
+    }
+
+    allVesatot.push({ type: 'yom_30', date: mlDate, onah: mlOnah, reason: 'מעת לעת', isActive: true });
+  }
+
+  // 3. אור זרוע (עונה סמוכה לפני הוסת)
+  if (settings.orZarua) {
+    const orZaruaList: CalculatedVeset[] = [];
+    
+    allVesatot.forEach(v => {
+      const prevOnah = oppositeOnah(v.onah);
+      const prevDate = new Date(v.date);
+
+      // תיקון אור זרוע לפי דרישת משתמש:
+      // 1. אם הוסת ביום (למשל ח' סיון יום), האור זרוע הוא בלילה שלפני (ז' סיון לילה) -> מורידים יום בתאריך הלועזי.
+      // 2. אם הוסת בלילה (למשל ח' סיון לילה), האור זרוע הוא ביום של אותו יום (ח' סיון יום) -> התאריך הלועזי נשאר זהה.
+      if (v.onah === 'day') {
+        prevDate.setDate(prevDate.getDate() - 1);
+      }
+      // במקרה של לילה, v.onah === 'night', ה-prevDate נשאר ללא שינוי וה-prevOnah הופך ל-'day'
+
+      orZaruaList.push({
+        type: v.type,
+        date: prevDate,
+        onah: prevOnah,
+        reason: `אור זרוע (${v.reason})`,
+        isActive: true,
+      });
+    });
+    
+    allVesatot.push(...orZaruaList);
+  }
+  
+  return allVesatot;
+}
+
+/**
+ * פונקציה זו מיועדת לחישוב היסטורי עבור כל מחזור בנפרד.
+ */
+export function calculateHistoricalVesatotForEvent(
+  currentVeset: VesetEvent,
+  previousVeset: VesetEvent | null,
+  hefsekhHistory: HefsekhTahara[],
+  settings: HalachicSettings,
+  location: UserLocation
+): CalculatedVeset[] {
+  // מערך לוסתות המקור (חודש, 30, 31, הפלגה) - עליהן נחשב אור זרוע
+  let baseVesatot: CalculatedVeset[] = [];
+  // מערך לוסתות נגזרות (מעת לעת, אור זרוע)
+  let derivedVesatot: CalculatedVeset[] = [];
+
+  // 1. חישוב וסתות מקור: יום החודש ויום 30
+  baseVesatot.push(calculateYomHachodesh(currentVeset, location));
+  baseVesatot.push(calculateYom30(currentVeset, location));
+
+  // 2. חישוב הפלגה
+  if (previousVeset) {
+    const haflagah = calculateHaflagahForSpecificPair(currentVeset, previousVeset, hefsekhHistory, settings, location);
+    if (haflagah) {
+      baseVesatot.push({
+        type: 'haflagah',
+        date: haflagah.nextDate,
+        onah: haflagah.onah,
+        reason: 'הפלגה',
+        isActive: true,
+      });
+    }
+  }
+
+  // 3. יום 31 (אם מוגדר)
+  if (settings.yom31) {
+    const d31 = new Date(currentVeset.date);
+    d31.setDate(d31.getDate() + 30);
+    baseVesatot.push({ 
+      type: 'yom_30', 
+      date: d31, 
+      onah: currentVeset.onah, 
+      reason: 'יום 31', 
+      isActive: true 
+    });
+  }
+
+  // 4. חישוב אור זרוע - מחושב אך ורק על וסתות המקור
+  if (settings.orZarua) {
+    baseVesatot.forEach(v => {
+      const prevOnah = oppositeOnah(v.onah);
+      const prevDate = new Date(v.date);
+      if (v.onah === 'day') {
+        prevDate.setDate(prevDate.getDate() - 1);
+      }
+      derivedVesatot.push({
+        type: v.type,
+        date: prevDate,
+        onah: prevOnah,
+        reason: `אור זרוע (${v.reason})`,
+        isActive: true,
+      });
+    });
+  }
+
+  // 5. חישוב מעת לעת עבור יום 30 ויום 31[cite: 3]
+  if (settings.maatLeat) {
+    // מסננים מהמקור רק את ימי ה-30 וה-31
+    const relevantDays = baseVesatot.filter(v => v.reason === 'פרישה יום 30' || v.reason === 'יום 31');
+    
+    relevantDays.forEach(v => {
+      const mlDate = new Date(v.date);
+      let mlOnah: OnahType;
+
+      if (v.onah === 'day') {
+        mlDate.setDate(mlDate.getDate() - 1);
+        mlOnah = 'night';
+      } else {
+        mlDate.setDate(mlDate.getDate() + 1);
+        mlOnah = 'day';
+      }
+
+      derivedVesatot.push({ 
+        type: 'yom_30', 
+        date: mlDate, 
+        onah: mlOnah, 
+        reason: `מעת לעת (${v.reason})`, 
+        isActive: true 
+      });
+    });
+  }
+
+  // החזרת כל הוסתות יחד
+  return [...baseVesatot, ...derivedVesatot];
 }
 
 /**
@@ -196,7 +374,7 @@ export function calculateVesatotForRange(
   settings: HalachicSettings,
   location: UserLocation
 ): CalculatedVeset[] {
-  const vesatot = calculateAllVesatot(
+  const vesatot = calculateFutureVesatot(
     vesetHistory,
     hefsekhHistory,
     settings,
@@ -254,31 +432,4 @@ export function getVesetTypeName(type: VesetType): string {
   };
   
   return names[type];
-}
-
-/**
- * חישוב וסתות נוספות לפי תוספות הלכתיות
- */
-export function calculateAdditionalVesatot(
-  lastVeset: VesetEvent,
-  settings: HalachicSettings,
-  location: UserLocation
-): CalculatedVeset[] {
-  const additional: CalculatedVeset[] = [];
-  
-  // אור זרוע - יום 31
-  if (settings.orZarua || settings.yom31) {
-    const day31 = new Date(lastVeset.date);
-    day31.setDate(day31.getDate() + 31);
-    
-    additional.push({
-      type: 'yom_30', // משתמשים באותו type
-      date: day31,
-      onah: lastVeset.onah,
-      reason: 'יום 31 (אור זרוע)',
-      isActive: true,
-    });
-  }
-  
-  return additional;
 }

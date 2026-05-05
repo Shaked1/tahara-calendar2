@@ -141,7 +141,7 @@ export default function CalendarPage() {
       const calculator = new TaharaCalculator(settings, location);
       const result = calculator.calculateAll(userHistory);
 
-      // מסננים רק את יום ה-30 ויום החודש
+      // מסננים רק את יום ה-30 ויום החודש מתוך התאריכים האסורים המחושבים
       const fixedVesetDays = result.prohibitedDates.filter(day => 
         day.vesetTypes?.some(t => ['yom_30', 'yom_hachodesh'].includes(t))
       );
@@ -199,7 +199,7 @@ export default function CalendarPage() {
           ...createCleanDaysNotifications(userId, result.cleanDays),
           ...(result.mikvahNight ? [createMikvahNotification(userId, result.mikvahNight)] : []),
           // הוספת יום ההפלגה - עכשיו הוא מחושב נכון לפי חב"ד!
-          ...createVesetReminders(userId, result.prohibitedDates.filter(d => d.vesetTypes?.includes('haflagah')))
+          ...createVesetReminders(userId, result.prohibitedDates.filter(d => d.vesetTypes?.includes('haflagah') && d.date > new Date())) // Only future haflagah
         ];
 
         await saveScheduledNotifications(notifications);

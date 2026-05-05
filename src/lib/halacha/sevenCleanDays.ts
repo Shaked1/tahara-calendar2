@@ -130,7 +130,7 @@ export function calculateFullTaharaProcess(
 ): {
   prohibitedDays: CalculatedDate[];
   hefsekDay: CalculatedDate | null;
-  cleanDays: CalculatedDate[];
+  cleanDays: CalculatedDate[]; // Can be empty if no hefsek
   mikvahNight: CalculatedDate | null;
 } {
   // שינוי כאן: משתמשים ב-let במקום const כדי לאפשר סינון מאוחר יותר

@@ -70,7 +70,8 @@ export type VesetType =
   | 'yom_hachodesh'       // יום החודש
   | 'yom_30'              // יום השלושים
   | 'haflagah'            // הפלגה
-  | 'minimum_days';       // 5 ימים מינימום
+  | 'minimum_days'        // 5 ימים מינימום
+  | 'actual_veset';      // וסת בפועל (ראייה או וסת מדויק)  
 
 export interface CalculatedVeset {
   type: VesetType;
@@ -86,7 +87,7 @@ export interface CalculatedVeset {
 
 export type DateStatus = 
   | 'prohibited'          // אסור
-  | 'hefsek_day'          // יום ההפסק טהרה (סטטוס נפרד כדי לאפשר צבע כחול)
+  | 'hefsek_day'          // יום ההפסק טהרה (סטטוס נפרד כדי לאפשר צבע ירוק)
   | 'clean_day'           // יום נקי (מתוך 7)
   | 'mikvah_night'        // ליל מקווה
   | 'permitted'           // מותר
@@ -100,6 +101,8 @@ export interface CalculatedDate {
   vesetTypes: VesetType[];  // איזה סוגי וסתות חלים
   cleanDayNumber?: number;  // אם זה יום נקי - מספר היום (1-7)
   reason: string;           // הסבר מפורט
+  reasons?: string[];       // רשימת כל הסיבות ליום זה
+  activeOnot?: OnahType[];  // רשימת כל העונות הפעילות ביום זה
 }
 
 // ====================================
