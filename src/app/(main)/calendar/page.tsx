@@ -101,9 +101,9 @@ export default function CalendarPage() {
     
     // חישוב לטווח של 3 חודשים
     const startDate = new Date();
-    startDate.setMonth(startDate.getMonth() - 1);
+    startDate.setMonth(startDate.getMonth() - 11); // מהלוח יראה 11 חודשיפ אחורה
     const endDate = new Date();
-    endDate.setMonth(endDate.getMonth() + 2);
+    endDate.setMonth(endDate.getMonth() + 4); // הלוח יראה 4 חודשים קדימה את החישובים 
 
     const dateMap = calculator.calculateForRange(startDate, endDate, hist);
     setCalculatedDates(dateMap);
