@@ -17,16 +17,15 @@ import {
 import { 
   calculateFutureVesatot,
   calculateHistoricalVesatotForEvent, // New function
-  isVesetDay,
-} from './vesatot';
+  } from './vesatot';
 
 import {
   calculateFullTaharaProcess,
-  getDateStatus,
 } from './sevenCleanDays';
 
 import { determineOnah } from './onot';
 import { formatHebrewDateShort } from '../hebrew-calendar';
+import { analyzeKavuot } from './vesatotKavuot';
 
 /**
  * מחלקה ראשית לכל חישובי הטהרה
@@ -38,6 +37,33 @@ export class TaharaCalculator {
   constructor(settings: HalachicSettings, location: UserLocation) {
     this.settings = settings;
     this.location = location;
+  }
+
+  private calculateFutureWithKavua(
+    events: VesetEvent[],
+    hefsekhTaharot: HefsekhTahara[]
+  ): CalculatedVeset[] {
+    // 1. ניתוח קביעות
+    const kavuaAnalysis = analyzeKavuot(
+      events,
+      hefsekhTaharot,
+      this.settings,
+      this.location
+    );
+
+    // 2. אם יש קבועה — מחזיר את 3 תאריכי הפרישה שחושבו ב-analyzeKavuot
+    //    (nextDates כבר מכיל 3 חודשים קדימה בדיוק)
+    if (kavuaAnalysis.activeKavua) {
+      return kavuaAnalysis.activeKavua.nextDates;
+    }
+
+    // 3. אין קבועה — מחזיר את כל הפרישות הרגילות (חודש + ל' + הפלגה)
+    return calculateFutureVesatot(
+      events,
+      hefsekhTaharot,
+      this.settings,
+      this.location
+    );
   }
 
   /**
@@ -57,6 +83,10 @@ export class TaharaCalculator {
 
     // Sort events from oldest to newest for chronological processing
     const sortedEvents = [...events].sort((a, b) => a.date.getTime() - b.date.getTime());
+
+    // ── ניתוח קביעות קודם לכל ──
+    const kavuaAnalysis = analyzeKavuot(events, hefsekhTaharot, this.settings, this.location);
+    const allowedVesetTypes = kavuaAnalysis.showTypes;
 
     const allProhibitedDates: CalculatedDate[] = [];
     const allCleanDays: CalculatedDate[] = [];
@@ -138,25 +168,27 @@ export class TaharaCalculator {
         this.settings,
         this.location
       );
-      // Merge these historical vesatot into the allProhibitedDates
-      allProhibitedDates.push(...historicalVesatotForThisEvent.map(veset => ({
+      // סינון: אם יש קבועה — רק הסוג הקבוע עובר. אחרת — הכל עובר.
+      const filteredHistorical = historicalVesatotForThisEvent.filter(
+        v => (allowedVesetTypes as string[]).includes(v.type)
+      );
+      allProhibitedDates.push(...filteredHistorical.map(veset => ({
         date: veset.date,
         hebrewDate: formatHebrewDateShort(veset.date),
-        status: 'prohibited',
+        status: 'prohibited' as const,
         onah: veset.onah,
         vesetTypes: [veset.type],
         reason: veset.reason,
         reasons: [veset.reason],
-        activeOnot: [veset.onah]
+        activeOnot: [veset.onah],
       })));
     }
+  
 
     // After processing all historical events, calculate future veset predictions based on the absolute latest event
-    nextVesatotPredictions = calculateFutureVesatot(
-      events, // Pass all events for haflagah calculation if it needs it
-      hefsekhTaharot,
-      this.settings,
-      this.location
+    nextVesatotPredictions = this.calculateFutureWithKavua(
+      events,
+      hefsekhTaharot
     );
 
     // Merge all collected prohibited dates, clean days, and the latest mikvah night into a single set of CalculatedDate objects
@@ -176,13 +208,10 @@ export class TaharaCalculator {
   }
 
   /**
-   * מיזוג ימי איסור עם ימי וסת
-   */
-  /**
    * מיזוג כל סוגי התאריכים המחושבים (אסורים, נקיים, מקווה) למערך אחד,
    * תוך טיפול בהתנגשויות וקביעת עדיפויות.
    */
-private mergeAllCalculatedDates(
+  private mergeAllCalculatedDates(
   prohibitedDates: CalculatedDate[],
   cleanDays: CalculatedDate[],
   mikvahNight: CalculatedDate | null,

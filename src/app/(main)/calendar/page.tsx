@@ -233,6 +233,7 @@ export default function CalendarPage() {
         isOpen={showAddModal}
         onClose={() => setShowAddModal(false)}
         onSubmit={handleAddVeset}
+        location={location} 
       />
 
       <AddHefsekhModal
