@@ -428,8 +428,8 @@ export function getVesetTypeName(type: VesetType): string {
     yom_30: 'יום 30',
     haflagah: 'הפלגה',
     minimum_days: '5 ימים',
-    
+    actual_veset: 'ראיית וסת',  // <-- זו השורה שהייתה חסרה!
   };
   
-  return names[type];
+  return names[type] || type;
 }
