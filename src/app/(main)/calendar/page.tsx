@@ -57,18 +57,18 @@ export default function CalendarPage() {
       }
 
       const userSettings: HalachicSettings = {
-        method: profile.halachic_method,
-        orZarua: profile.or_zarua,
-        yom31: profile.yom_31,
-        maatLeat: profile.maat_leat,
+        method: (profile as any).halachic_method,
+        orZarua: (profile as any).or_zarua,
+        yom31: (profile as any).yom_31,
+        maatLeat: (profile as any).maat_leat,
       };
       setSettings(userSettings);
 
       const userLocation: UserLocation = {
-        latitude: parseFloat(profile.latitude),
-        longitude: parseFloat(profile.longitude),
-        timezone: profile.timezone,
-        locationName: profile.location_name,
+        latitude: parseFloat((profile as any).latitude),
+        longitude: parseFloat((profile as any).longitude),
+        timezone: (profile as any).timezone,
+        locationName: (profile as any).location_name,
       };
       setLocation(userLocation);
 
