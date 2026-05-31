@@ -17,6 +17,7 @@ import { supabase, getCurrentUser, signOut } from '@/lib/supabase/client';
 import { getUserHistory, addVesetEvent } from '@/lib/supabase/vesatot';
 import { TaharaCalculator } from '@/lib/halacha/calculator';
 import { HalachicSettings, UserLocation, VesetHistory } from '@/types';
+import { useNotifications } from '@/hooks/useNotifications';
 
 export default function CalendarPage() {
   const router = useRouter();
@@ -28,6 +29,14 @@ export default function CalendarPage() {
   const [settings, setSettings] = useState<HalachicSettings | null>(null);
   const [location, setLocation] = useState<UserLocation | null>(null);
   const [userId, setUserId] = useState<string | null>(null);
+
+  // ── Hook להתראות — חייב להיות ברמת הקומפוננטה, לא בתוך async function ──
+  const { askPermission, scheduled } = useNotifications({
+    userId,
+    history,
+    settings,
+    location,
+  });
 
   useEffect(() => {
     loadUserData();
@@ -171,6 +180,16 @@ export default function CalendarPage() {
           <div className="flex gap-2 items-center flex-wrap justify-end">
             {/* תפריט קרא עוד */}
             <ReadMoreMenu />
+
+            {/* כפתור הפעלת התראות */}
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={askPermission}
+              title={`התראות${scheduled > 0 ? ` (${scheduled} מתוזמנות)` : ''}`}
+            >
+              🔔{scheduled > 0 && <span className="mr-1 text-xs">{scheduled}</span>}
+            </Button>
 
             <Button variant="default" onClick={() => setShowAddModal(true)}>
               <Plus className="h-5 w-5 ml-2" />

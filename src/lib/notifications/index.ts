@@ -1,293 +1,485 @@
-
 /**
- * מודול התראות - כולל תזכורות פרישה 3 ימים מראש
+ * מודול התראות מלא
+ * ─────────────────────────────────────────────
+ * סוגי התראות:
+ *  1. תזכורת לנסות הפסק טהרה (יום 4 / יום 5 לפי שיטה)
+ *  2. בדיקות יומיות כשיש הפסק (06:30 + שעתיים לפני שקיעה)
+ *  3. תזכורת יומיים לפני הטבילה
+ *  4. תזכורת ביום הטבילה
+ *  5. תזכורות ימי פרישה (יום חודש / יום ל' / הפלגה) — תחילת עונה + סוף עונה
+ *
+ * שליחה: מייל (Resend) + Push Notification (Web Push)
  */
 
-import { CalculatedDate } from '@/types';
 import { supabase } from '@/lib/supabase/client';
+import {
+  VesetEvent,
+  HefsekhTahara,
+  CalculatedDate,
+  HalachicSettings,
+  UserLocation,
+} from '@/types';
 
-export interface NotificationSchedule {
+// ─────────────────────────────────────────────
+// טיפוסים
+// ─────────────────────────────────────────────
+
+export type NotificationType =
+  | 'hefsek_reminder'      // תזכורת לנסות הפסק
+  | 'clean_day_morning'    // בדיקת בוקר (06:30)
+  | 'clean_day_afternoon'  // בדיקת צהריים (שעתיים לפני שקיעה)
+  | 'pre_mikvah'           // יומיים לפני טבילה
+  | 'mikvah_day'           // יום הטבילה
+  | 'veset_start_onah'     // תחילת עונת פרישה
+  | 'veset_end_onah';      // סוף עונת פרישה
+
+export interface NotificationPayload {
   userId: string;
-  date: Date;
-  time: string;
-  type: 'morning' | 'evening' | 'veset_reminder';
-  message: string;
-  cleanDayNumber?: number;
-  subject?: string; // עבור מיילים
-}
-
-/**
- * 1. יצירת תזכורות עבור 7 ימים נקיים (מעודכן ל-07:00 ו-14:00)
- */
-export function createCleanDaysNotifications(
-  userId: string,
-  cleanDays: CalculatedDate[]
-): NotificationSchedule[] {
-  const notifications: NotificationSchedule[] = [];
-
-  cleanDays.forEach((day) => {
-    if (!day.cleanDayNumber) return;
-
-    // תזכורת בוקר - 07:00
-    notifications.push({
-      userId,
-      date: day.date,
-      time: '07:00',
-      type: 'morning',
-      message: `🌅 בוקר טוב! זכרי לעשות בדיקה - יום נקי ${day.cleanDayNumber} מתוך 7`,
-      cleanDayNumber: day.cleanDayNumber,
-      subject: 'תזכורת בדיקת בוקר'
-    });
-
-    // תזכורת צהריים - 14:00 (לפני שקיעה)
-    notifications.push({
-      userId,
-      date: day.date,
-      time: '14:00',
-      type: 'evening',
-      message: `🌆 תזכורת צהריים: זכרי לעשות בדיקה לפני השקיעה - יום נקי ${day.cleanDayNumber} מתוך 7`,
-      cleanDayNumber: day.cleanDayNumber,
-      subject: 'תזכורת בדיקת הפסק/צהריים'
-    });
-  });
-
-  return notifications;
-}
-
-/**
- * 2. יצירת תזכורות לימי פרישה (3 ימים מראש וביום עצמו)
- */
-export function createVesetReminders(
-  userId: string,
-  prohibitedDates: CalculatedDate[]
-): NotificationSchedule[] {
-  const notifications: NotificationSchedule[] = [];
-
-  // נסנן רק ימים שהם ימי פרישה (הפלגה, חודש, 30)
-  const vesetDays = prohibitedDates.filter(day => 
-    day.vesetTypes && day.vesetTypes.some(t => ['yom_30', 'yom_hachodesh', 'haflagah'].includes(t))
-  );
-
-  vesetDays.forEach((day) => {
-    const typesHe = day.vesetTypes?.map(t => {
-      if (t === 'yom_30') return 'יום ה-30';
-      if (t === 'yom_hachodesh') return 'יום החודש';
-      if (t === 'haflagah') return 'יום ההפלגה';
-      return '';
-    }).join(' ו-');
-
-    // א. תזכורת 3 ימים מראש (שעה 20:00 בערב)
-    const threeDaysBefore = new Date(day.date);
-    threeDaysBefore.setDate(threeDaysBefore.getDate() - 3);
-    
-    notifications.push({
-      userId,
-      date: threeDaysBefore,
-      time: '20:00',
-      type: 'veset_reminder',
-      message: `🔔 שימי לב: בעוד 3 ימים יחול יום פרישה (${typesHe}).`,
-      subject: 'תזכורת מוקדמת ליום פרישה'
-    });
-
-    // ב. תזכורת ביום הפרישה עצמו (08:00 בבוקר)
-    notifications.push({
-      userId,
-      date: day.date,
-      time: '08:00',
-      type: 'veset_reminder',
-      message: `⚠️ היום יום פרישה (${typesHe}). זכרי לפרוש כהלכה בעונה המתאימה.`,
-      subject: 'היום יום פרישה'
-    });
-  });
-
-  return notifications;
-}
-
-/**
- * שליחת מייל משולבת (לוגיקה כללית)
- */
-export async function processAndSendNotifications(
-  userEmail: string,
-  notifications: NotificationSchedule[]
-) {
-  for (const n of notifications) {
-    // כאן תזמני את המייל לצאת ב-n.date ובשעה n.time
-    // אם את משתמשת ב-Node.js בשרת, אפשר להשתמש ב-Cron Jobs או ב-Queues
-    await sendEmailNotification(userEmail, n.subject || 'תזכורת טהרה', n.message);
-    
-    // שליחת Push לטלפון (אם המשתמש באפליקציה כרגע)
-    await showLocalNotification(n.subject || 'תזכורת', n.message);
-  }
-}
-
-
-
-/**
- * יצירת תזכורת לליל טבילה
- */
-export function createMikvahNotification(
-  userId: string,
-  mikvahNight: CalculatedDate
-): NotificationSchedule {
-  return {
-    userId,
-    date: mikvahNight.date,
-    time: '18:00',
-    type: 'evening',
-    message: '💧 הערב ליל טבילה! זכרי לצאת לטבילה אחרי צאת הכוכבים',
-  };
-}
-
-/**
- * שליחת התראה למייל (דמה - צריך אינטגרציה עם שירות מייל)
- */
-export async function sendEmailNotification(
-  email: string,
-  subject: string,
-  message: string
-): Promise<boolean> {
-  try {
-    // כאן תשלב עם שירות מייל כמו SendGrid, AWS SES, וכו'
-    console.log('📧 Email notification:', { email, subject, message });
-    
-    // TODO: אינטגרציה אמיתית
-    // await fetch('/api/send-email', {
-    //   method: 'POST',
-    //   body: JSON.stringify({ email, subject, message })
-    // });
-    
-    return true;
-  } catch (error) {
-    console.error('Error sending email:', error);
-    return false;
-  }
-}
-
-/**
- * רישום להתראות Push (דורש Service Worker)
- */
-export async function subscribeToPushNotifications(
-  userId: string
-): Promise<boolean> {
-  try {
-    if (!('Notification' in window)) {
-      console.log('התראות לא נתמכות בדפדפן זה');
-      return false;
-    }
-
-    const permission = await Notification.requestPermission();
-    
-    if (permission !== 'granted') {
-      console.log('המשתמש לא נתן הרשאה להתראות');
-      return false;
-    }
-
-    // TODO: רישום ל-Push Service
-    console.log('✅ התראות הופעלו למשתמש:', userId);
-    return true;
-  } catch (error) {
-    console.error('Error subscribing to notifications:', error);
-    return false;
-  }
-}
-
-/**
- * שליחת התראה מקומית (בדפדפן)
- */
-export async function showLocalNotification(
-  title: string,
-  message: string,
-  options?: NotificationOptions
-): Promise<void> {
-  try {
-    if (!('Notification' in window)) {
-      return;
-    }
-
-    if (Notification.permission === 'granted') {
-      new Notification(title, {
-        body: message,
-        icon: '/icons/icon-192x192.png',
-        badge: '/icons/icon-72x72.png',
-        ...options,
-      });
-    }
-  } catch (error) {
-    console.error('Error showing notification:', error);
-  }
-}
-
-/**
- * תזמון התראות (לשימוש עתידי עם Service Worker)
- */
-export interface ScheduledNotification {
-  id: string;
-  userId: string;
+  userEmail: string;
   scheduledFor: Date;
   title: string;
   body: string;
-  sent: boolean;
+  type: NotificationType;
 }
 
-/**
- * שמירת התראות מתוזמנות (לדוגמה - צריך DB אמיתי)
- */
-export async function saveScheduledNotifications(
-  notifications: NotificationSchedule[]
-): Promise<void> {
-  try {
-    if (notifications.length === 0) return;
-    
-    const userId = notifications[0]?.userId;
-    if (!userId) return;
+// ─────────────────────────────────────────────
+// עזר: חישוב שקיעה מקורב (NOAA פשוט)
+// ─────────────────────────────────────────────
 
-    // --- הוספה: קבלת המייל של המשתמשת המחוברת ---
-    const { data: { user } } = await supabase.auth.getUser();
-    const userEmail = user?.email;
+function calcSunset(date: Date, lat: number, lng: number): Date {
+  const rad = Math.PI / 180;
+  const dayOfYear = Math.floor(
+    (date.getTime() - new Date(date.getFullYear(), 0, 0).getTime()) / 86400000
+  );
+  const B    = (360 / 365) * (dayOfYear - 81) * rad;
+  const eot  = 9.87 * Math.sin(2 * B) - 7.53 * Math.cos(B) - 1.5 * Math.sin(B);
+  const noon = 12 - lng / 15 - eot / 60;
+  const decl = 23.45 * Math.sin(B) * rad;
+  const cosH = -Math.tan(lat * rad) * Math.tan(decl);
+  const H    = Math.abs(cosH) > 1 ? 6 : Math.acos(cosH) / rad;
+  const sunsetUtc = noon + H / 15;
 
-    // 1. מחיקת התראות ישנות שטרם נשלחו
-    await supabase
-      .from('scheduled_notifications')
-      .delete()
-      .eq('user_id', userId)
-      .eq('is_sent', false);
+  const d = new Date(date);
+  d.setUTCHours(0, 0, 0, 0);
+  d.setTime(d.getTime() + sunsetUtc * 3600 * 1000);
+  return d;
+}
 
-    // 2. הכנת הנתונים למערך
-    const dataToInsert = notifications.map(n => {
-      const [hours, minutes] = n.time.split(':').map(Number);
-      const scheduledDate = new Date(n.date);
-      scheduledDate.setHours(hours, minutes, 0, 0);
+function twoHoursBeforeSunset(date: Date, location: UserLocation): Date {
+  const sunset = calcSunset(date, location.latitude, location.longitude);
+  return new Date(sunset.getTime() - 2 * 60 * 60 * 1000);
+}
 
-      return {
-        user_id: userId,
-        user_email: userEmail, // --- שמירת המייל בטבלה ---
-        scheduled_for: scheduledDate.toISOString(),
-        title: n.subject || 'תזכורת טהרה',
-        body: n.message,
-        type: mapNotificationType(n.type, n.message),
-        is_sent: false
-      };
+// ─────────────────────────────────────────────
+// עזר: בניית תאריך עם שעה
+// ─────────────────────────────────────────────
+
+function atTime(date: Date, hours: number, minutes: number): Date {
+  const d = new Date(date);
+  d.setHours(hours, minutes, 0, 0);
+  return d;
+}
+
+function formatDateHe(date: Date): string {
+  return date.toLocaleDateString('he-IL', { day: 'numeric', month: 'long', weekday: 'long' });
+}
+
+// ─────────────────────────────────────────────
+// 1. תזכורת לנסות הפסק טהרה
+//    יום 4 = מרן עובדיה / בן איש חי / הרב אליהו
+//    יום 5 = חב"ד
+// ─────────────────────────────────────────────
+
+export function buildHefsekReminders(
+  userId: string,
+  userEmail: string,
+  vesetEvent: VesetEvent,
+  settings: HalachicSettings,
+  location: UserLocation
+): NotificationPayload[] {
+  const notifications: NotificationPayload[] = [];
+
+  // קביעת היום הרלוונטי לפי שיטה
+  const dayOffset = settings.method === 'chabad' ? 4 : 3; // יום 5 = +4, יום 4 = +3 (יום הראייה = יום 1)
+
+  const hefsekDay = new Date(vesetEvent.date);
+  hefsekDay.setDate(hefsekDay.getDate() + dayOffset);
+  hefsekDay.setHours(0, 0, 0, 0);
+
+  const dayLabel  = settings.method === 'chabad' ? 'החמישי' : 'הרביעי';
+  const methodHe  = settings.method === 'chabad'
+    ? 'חב"ד'
+    : settings.method === 'ben_ish_chai'
+      ? 'בן איש חי'
+      : settings.method === 'ovadia_yosef'
+        ? 'מרן הרב עובדיה יוסף'
+        : 'הרב מרדכי אליהו';
+
+  // התראת בוקר — 07:00
+  notifications.push({
+    userId,
+    userEmail,
+    scheduledFor: atTime(hefsekDay, 7, 0),
+    title:        '🌅 תזכורת — הפסק טהרה',
+    body:         `היום הוא יום ${dayLabel} למחזור. לפי שיטת ${methodHe} ניתן לנסות לעשות הפסק טהרה לפני השקיעה.`,
+    type:         'hefsek_reminder',
+  });
+
+  // התראה שעתיים לפני שקיעה
+  const afternoonTime = twoHoursBeforeSunset(hefsekDay, location);
+  notifications.push({
+    userId,
+    userEmail,
+    scheduledFor: afternoonTime,
+    title:        '⏰ תזכורת — הפסק טהרה לפני השקיעה',
+    body:         `עוד כשעתיים השקיעה. זו ההזדמנות האחרונה להיום לעשות הפסק טהרה.`,
+    type:         'hefsek_reminder',
+  });
+
+  return notifications;
+}
+
+// ─────────────────────────────────────────────
+// 2. בדיקות יומיות — 7 ימים נקיים
+//    06:30 בוקר + שעתיים לפני שקיעה
+// ─────────────────────────────────────────────
+
+export function buildCleanDayReminders(
+  userId: string,
+  userEmail: string,
+  cleanDays: CalculatedDate[],
+  location: UserLocation
+): NotificationPayload[] {
+  const notifications: NotificationPayload[] = [];
+
+  cleanDays.forEach(day => {
+    if (!day.cleanDayNumber) return;
+
+    const num  = day.cleanDayNumber;
+    const date = new Date(day.date);
+
+    // בוקר — 06:30
+    notifications.push({
+      userId,
+      userEmail,
+      scheduledFor: atTime(date, 6, 30),
+      title:        `☀️ בדיקת בוקר — יום נקי ${num}`,
+      body:         `בוקר טוב! היום יום נקי ${num} מתוך 7. זכרי לעשות בדיקה בבוקר.`,
+      type:         'clean_day_morning',
     });
 
-    // 3. שמירה ב-Supabase
-    const { error: insertError } = await supabase
-      .from('scheduled_notifications')
-      .insert(dataToInsert as any[]);
+    // שעתיים לפני שקיעה
+    const afternoonTime = twoHoursBeforeSunset(date, location);
+    notifications.push({
+      userId,
+      userEmail,
+      scheduledFor: afternoonTime,
+      title:        `🌅 בדיקת אחר הצהריים — יום נקי ${num}`,
+      body:         `עוד כשעתיים השקיעה. זכרי לעשות בדיקה לפני ${num === 7 ? 'הטבילה הערב! 💧' : 'סוף היום.'}`,
+      type:         'clean_day_afternoon',
+    });
+  });
 
-    if (insertError) throw insertError;
-    console.log('✅ Notifications saved with email:', userEmail);
+  return notifications;
+}
 
-  } catch (error) {
+// ─────────────────────────────────────────────
+// 3. תזכורת יומיים לפני הטבילה
+// ─────────────────────────────────────────────
+
+export function buildPreMikvahReminder(
+  userId: string,
+  userEmail: string,
+  mikvahNight: CalculatedDate
+): NotificationPayload {
+  const mikvahDate = new Date(mikvahNight.date);
+  const twoDaysBefore = new Date(mikvahDate);
+  twoDaysBefore.setDate(twoDaysBefore.getDate() - 2);
+
+  return {
+    userId,
+    userEmail,
+    scheduledFor: atTime(twoDaysBefore, 9, 0),
+    title:        '💧 עוד יומיים — ליל הטבילה',
+    body:         `בעוד יומיים, ב${formatDateHe(mikvahDate)}, הוא ליל הטבילה שלך. זמן טוב להתכונן.`,
+    type:         'pre_mikvah',
+  };
+}
+
+// ─────────────────────────────────────────────
+// 4. תזכורת ביום הטבילה
+// ─────────────────────────────────────────────
+
+export function buildMikvahDayReminder(
+  userId: string,
+  userEmail: string,
+  mikvahNight: CalculatedDate,
+  location: UserLocation
+): NotificationPayload[] {
+  const notifications: NotificationPayload[] = [];
+  const date = new Date(mikvahNight.date);
+
+  // בוקר — 09:00
+  notifications.push({
+    userId,
+    userEmail,
+    scheduledFor: atTime(date, 9, 0),
+    title:        '💧 הערב — ליל הטבילה!',
+    body:         'הערב הוא ליל הטבילה שלך. טבילה כשרה ומבורכת!',
+    type:         'mikvah_day',
+  });
+
+  // שעה לפני שקיעה — תזכורת אחרונה
+  const sunset = calcSunset(date, location.latitude, location.longitude);
+  const oneHourBefore = new Date(sunset.getTime() - 60 * 60 * 1000);
+  notifications.push({
+    userId,
+    userEmail,
+    scheduledFor: oneHourBefore,
+    title:        '🌙 עוד שעה — צאת הכוכבים',
+    body:         'בעוד כשעה צאת הכוכבים. הכיני את עצמך לטבילה. טבילה כשרה!',
+    type:         'mikvah_day',
+  });
+
+  return notifications;
+}
+
+// ─────────────────────────────────────────────
+// 5. תזכורות ימי פרישה
+//    תחילת עונה + סוף עונה
+// ─────────────────────────────────────────────
+
+const VESET_TYPE_HE: Record<string, string> = {
+  yom_hachodesh: 'יום החודש',
+  yom_30:        'יום השלושים',
+  haflagah:      'יום ההפלגה',
+};
+
+export function buildVesetDayReminders(
+  userId: string,
+  userEmail: string,
+  prohibitedDate: CalculatedDate,
+  location: UserLocation
+): NotificationPayload[] {
+  const notifications: NotificationPayload[] = [];
+
+  const vesetTypes = (prohibitedDate.vesetTypes ?? [])
+    .filter(t => ['yom_hachodesh', 'yom_30', 'haflagah'].includes(t));
+
+  if (vesetTypes.length === 0) return [];
+
+  const typeLabels = vesetTypes.map(t => VESET_TYPE_HE[t] ?? t).join(' + ');
+  const date       = new Date(prohibitedDate.date);
+  const onah       = prohibitedDate.onah;
+
+  // תחילת העונה
+  let startOfOnah: Date;
+  if (onah === 'night') {
+    // עונת לילה מתחילה בשקיעה
+    startOfOnah = calcSunset(date, location.latitude, location.longitude);
+    // 15 דקות לפני תחילת העונה
+    const reminderTime = new Date(startOfOnah.getTime() - 15 * 60 * 1000);
+    notifications.push({
+      userId,
+      userEmail,
+      scheduledFor: reminderTime,
+      title:        `⚠️ עוד 15 דקות — תחילת עונת פרישה`,
+      body:         `בעוד כרבע שעה מתחילה עונת הפרישה של ${typeLabels}. זכרי לפרוש כהלכה.`,
+      type:         'veset_start_onah',
+    });
+  } else {
+    // עונת יום — 06:30 בבוקר
+    notifications.push({
+      userId,
+      userEmail,
+      scheduledFor: atTime(date, 6, 30),
+      title:        `⚠️ היום — יום פרישה (${typeLabels})`,
+      body:         `היום יום פרישה של ${typeLabels} — עונת יום. זכרי לפרוש מהזריחה.`,
+      type:         'veset_start_onah',
+    });
+  }
+
+  // סוף העונה — תזכורת שהפרישה הסתיימה
+  if (onah === 'day') {
+    const sunset = calcSunset(date, location.latitude, location.longitude);
+    notifications.push({
+      userId,
+      userEmail,
+      scheduledFor: new Date(sunset.getTime() + 5 * 60 * 1000), // 5 דקות אחרי שקיעה
+      title:        `✅ עונת הפרישה הסתיימה`,
+      body:         `עונת הפרישה של ${typeLabels} הסתיימה עם שקיעת השמש.`,
+      type:         'veset_end_onah',
+    });
+  } else {
+    // עונת לילה מסתיימת בזריחה
+    const tomorrow = new Date(date);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    // קירוב זריחה: שקיעה - 13 שעות
+    const sunrise = new Date(calcSunset(date, location.latitude, location.longitude).getTime() - 13 * 3600 * 1000);
+    notifications.push({
+      userId,
+      userEmail,
+      scheduledFor: new Date(sunrise.getTime() + 5 * 60 * 1000),
+      title:        `✅ עונת הפרישה הסתיימה`,
+      body:         `עונת הפרישה של ${typeLabels} הסתיימה עם הזריחה.`,
+      type:         'veset_end_onah',
+    });
+  }
+
+  return notifications;
+}
+
+// ─────────────────────────────────────────────
+// שמירה ל-Supabase (scheduled_notifications)
+// ─────────────────────────────────────────────
+
+export async function saveAllNotifications(
+  notifications: NotificationPayload[]
+): Promise<void> {
+  if (notifications.length === 0) return;
+
+  const rows = notifications.map(n => ({
+    user_id:       n.userId,
+    user_email:    n.userEmail,
+    scheduled_for: n.scheduledFor.toISOString(),
+    title:         n.title,
+    body:          n.body,
+    type:          n.type,
+    sent:          false,
+  }));
+
+  const { error } = await supabase
+    .from('scheduled_notifications')
+    .insert(rows as any[]);
+
+  if (error) {
     console.error('Error saving notifications:', error);
+    throw error;
   }
 }
 
-/**
- * פונקציית עזר לתרגום הסוגים עבור ה-DB
- */
-function mapNotificationType(type: string, message: string): string {
-  if (type === 'veset_reminder') return 'veset_reminder';
-  if (message.includes('טבילה')) return 'mikvah_night';
-  if (type === 'morning' || type === 'evening') return 'clean_day';
-  return 'general';
+// ─────────────────────────────────────────────
+// מחיקת התראות ישנות של משתמש (לפני חישוב חדש)
+// ─────────────────────────────────────────────
+
+export async function clearPendingNotifications(
+  userId: string,
+  types?: NotificationType[]
+): Promise<void> {
+  let query = supabase
+    .from('scheduled_notifications')
+    .delete()
+    .eq('user_id', userId)
+    .eq('sent', false)
+    .gt('scheduled_for', new Date().toISOString());
+
+  if (types && types.length > 0) {
+    (query as any).in('type', types);
+  }
+
+  const { error } = await query;
+  if (error) console.error('Error clearing notifications:', error);
+}
+
+// ─────────────────────────────────────────────
+// Web Push — רישום + שליחה
+// ─────────────────────────────────────────────
+
+export async function requestPushPermission(): Promise<boolean> {
+  if (!('Notification' in window)) return false;
+  if (Notification.permission === 'granted') return true;
+  if (Notification.permission === 'denied') return false;
+
+  const result = await Notification.requestPermission();
+  return result === 'granted';
+}
+
+export async function showPushNotification(
+  title: string,
+  body: string,
+  options?: { icon?: string; badge?: string; tag?: string }
+): Promise<void> {
+  const granted = await requestPushPermission();
+  if (!granted) return;
+
+  if ('serviceWorker' in navigator) {
+    const registration = await navigator.serviceWorker.ready;
+    await registration.showNotification(title, {
+      body,
+      icon:  options?.icon  ?? '/icons/icon-192x192.png',
+      badge: options?.badge ?? '/icons/icon-72x72.png',
+      tag:   options?.tag,
+      dir:   'rtl',
+      lang:  'he',
+    } as any);
+  } else {
+    new Notification(title, { body, dir: 'rtl', lang: 'he' });
+  }
+}
+
+// ─────────────────────────────────────────────
+// פונקציה ראשית — מחשבת ושומרת את כל ההתראות
+// למחזור נוכחי שלם
+// ─────────────────────────────────────────────
+
+export async function scheduleAllNotificationsForCycle(params: {
+  userId:      string;
+  userEmail:   string;
+  vesetEvent:  VesetEvent;
+  hefsekh:     HefsekhTahara | null;
+  cleanDays:   CalculatedDate[];
+  mikvahNight: CalculatedDate | null;
+  prohibitedDates: CalculatedDate[];
+  settings:    HalachicSettings;
+  location:    UserLocation;
+}): Promise<number> {
+  const {
+    userId, userEmail, vesetEvent, hefsekh,
+    cleanDays, mikvahNight, prohibitedDates,
+    settings, location,
+  } = params;
+
+  const all: NotificationPayload[] = [];
+  const now = new Date();
+
+  // 1. תזכורות הפסק טהרה (רק אם עוד לא נעשה הפסק)
+  if (!hefsekh) {
+    all.push(...buildHefsekReminders(userId, userEmail, vesetEvent, settings, location)
+      .filter(n => n.scheduledFor > now));
+  }
+
+  // 2. בדיקות ימים נקיים (רק אם יש הפסק)
+  if (hefsekh && cleanDays.length > 0) {
+    all.push(...buildCleanDayReminders(userId, userEmail, cleanDays, location)
+      .filter(n => n.scheduledFor > now));
+  }
+
+  // 3. + 4. תזכורות טבילה
+  if (mikvahNight) {
+    const preMikvah = buildPreMikvahReminder(userId, userEmail, mikvahNight);
+    if (preMikvah.scheduledFor > now) all.push(preMikvah);
+
+    all.push(...buildMikvahDayReminder(userId, userEmail, mikvahNight, location)
+      .filter(n => n.scheduledFor > now));
+  }
+
+  // 5. תזכורות ימי פרישה (3 חודשים קדימה)
+  const futurePrisha = prohibitedDates.filter(d => {
+    const types = d.vesetTypes ?? [];
+    return (
+      d.date > now &&
+      types.some(t => ['yom_hachodesh', 'yom_30', 'haflagah'].includes(t))
+    );
+  });
+
+  futurePrisha.forEach(pd => {
+    all.push(...buildVesetDayReminders(userId, userEmail, pd, location)
+      .filter(n => n.scheduledFor > now));
+  });
+
+  // מחיקת ישנות + שמירת חדשות
+  await clearPendingNotifications(userId);
+  if (all.length > 0) await saveAllNotifications(all);
+
+  return all.length;
 }
