@@ -76,7 +76,7 @@ export class TaharaCalculator {
       return {
         prohibitedDates: [],
         cleanDays: [],
-        mikvahNight: null, // Changed to null for consistency
+        mikvahNight: undefined, // Changed to null for consistency
         nextVesatot: [],
       };
     }
