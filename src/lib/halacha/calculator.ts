@@ -90,13 +90,13 @@ export class TaharaCalculator {
 
     const allProhibitedDates: CalculatedDate[] = [];
     const allCleanDays: CalculatedDate[] = [];
-    let latestMikvahNight: CalculatedDate | null = null;
+    let latestMikvahNight: CalculatedDate | undefined = undefined;
     let nextVesatotPredictions: CalculatedVeset[] = [];
 
     // Iterate through each veset event to calculate its associated tahara process and historical vesatot
     for (let i = 0; i < sortedEvents.length; i++) {
       const currentVeset = sortedEvents[i];
-      const previousVeset = i > 0 ? sortedEvents[i - 1] : null;
+      const previousVeset = i > 0 ? sortedEvents[i - 1] : undefined;
 
       // Find the hefsekh for the current veset event
       const hefsekForCurrentVeset = hefsekhTaharot
@@ -141,7 +141,7 @@ export class TaharaCalculator {
       // Calculate the full tahara process for this cycle (prohibited days, hefsek, clean days, mikvah night)
       const taharaProcess = calculateFullTaharaProcess(
         currentVeset,
-        hefsekForCurrentVeset || null,
+        hefsekForCurrentVeset || undefined,
         this.location
       );
 
@@ -289,7 +289,7 @@ export class TaharaCalculator {
   getDateStatus(
     date: Date,
     history: VesetHistory
-  ): CalculatedDate | null {
+  ): CalculatedDate | undefined {
     const result = this.calculateAll(history);
 
     const prohibited = result.prohibitedDates.find(d => this.isSameDay(d.date, date));
@@ -329,7 +329,7 @@ export class TaharaCalculator {
       // Find the status from the aggregated results
       // Prioritize prohibited > mikvah_night > clean_day > permitted
       const status = result.prohibitedDates.find(d => this.isSameDay(d.date, currentDate)) ||
-                     (result.mikvahNight && this.isSameDay(result.mikvahNight.date, currentDate) ? result.mikvahNight : null) ||
+                     (result.mikvahNight && this.isSameDay(result.mikvahNight.date, currentDate) ? result.mikvahNight : undefined) ||
                      result.cleanDays.find(d => this.isSameDay(d.date, currentDate));
       
       if (status) { // If a specific status is found
@@ -371,22 +371,22 @@ export class TaharaCalculator {
     return status?.status === 'prohibited';
   }
 
-  getNextVeset(history: VesetHistory): CalculatedVeset | null {
+  getNextVeset(history: VesetHistory): CalculatedVeset | undefined {
     const result = this.calculateAll(history);
     const today = new Date();
     const futureVesatot = result.nextVesatot
       .filter(v => v.date > today)
       .sort((a, b) => a.date.getTime() - b.date.getTime());
-    return futureVesatot[0] || null;
+    return futureVesatot[0] || undefined;
   }
 
-  getNextMikvahNight(history: VesetHistory): CalculatedDate | null {
+  getNextMikvahNight(history: VesetHistory): CalculatedDate | undefined {
     const result = this.calculateAll(history);
     const today = new Date();
     if (result.mikvahNight && result.mikvahNight.date > today) {
       return result.mikvahNight;
     }
-    return null;
+    return undefined;
   }
 
   getCleanDaysCompleted(history: VesetHistory): number {
