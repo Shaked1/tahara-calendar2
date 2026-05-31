@@ -51,7 +51,7 @@ export default function CalendarPage() {
 
       if (profileError) throw profileError;
 
-      if (!profile.onboarding_completed) {
+      if (!profile || !(profile as any).onboarding_completed) {
         router.push('/onboarding');
         return;
       }
