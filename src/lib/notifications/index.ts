@@ -338,22 +338,35 @@ export async function saveAllNotifications(
 ): Promise<void> {
   if (notifications.length === 0) return;
 
-  const rows = notifications.map(n => ({
-    user_id:       n.userId,
-    user_email:    n.userEmail,
-    scheduled_for: n.scheduledFor.toISOString(),
-    title:         n.title,
-    body:          n.body,
-    type:          n.type,
-    sent:          false,
-  }));
+  const rows = notifications
+    .map(n => {
+      const dateObj = n.scheduledFor instanceof Date ? n.scheduledFor : new Date(n.scheduledFor);
+
+      if (isNaN(dateObj.getTime())) {
+        console.error("❌ התגלה תאריך לא תקין עבור התראה:", n);
+        return null; 
+      }
+
+      return {
+        user_id:       n.userId,
+        user_email:    n.userEmail,       // 👈 קיים במיגרציה 002
+        scheduled_for: dateObj.toISOString(),
+        title:         n.title,
+        body:          n.body,            // 👈 העמודה שה-DB חיפש
+        type:          n.type,
+        sent:          false,             // 👈 שינינו ב-DB מ-is_sent ל-sent
+      };
+    })
+    .filter(row => row !== null);
+
+  if (rows.length === 0) return;
 
   const { error } = await supabase
     .from('scheduled_notifications')
     .insert(rows as any[]);
 
   if (error) {
-    console.error('Error saving notifications:', error);
+    console.error('Error saving notifications details:', error.message, error.details);
     throw error;
   }
 }
