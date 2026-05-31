@@ -163,14 +163,14 @@ export class TaharaCalculator {
       // These are the vesatot that would have been relevant *after* this currentVeset occurred
       const historicalVesatotForThisEvent = calculateHistoricalVesatotForEvent(
         currentVeset,
-        previousVeset,
+        previousVeset || null,
         hefsekhTaharot, // Pass full hefsekh history for haflagah calculation
         this.settings,
         this.location
       );
       // סינון: אם יש קבועה — רק הסוג הקבוע עובר. אחרת — הכל עובר.
       const filteredHistorical = historicalVesatotForThisEvent.filter(
-        v => (allowedVesetTypes as string[]).includes(v.type)
+        v => ((allowedVesetTypes || []) as string[]).includes(v.type)
       );
       allProhibitedDates.push(...filteredHistorical.map(veset => ({
         date: veset.date,
