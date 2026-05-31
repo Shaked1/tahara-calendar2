@@ -202,7 +202,7 @@ export class TaharaCalculator {
     return {
       prohibitedDates: finalCalculatedDates.filter(d => d.status === 'prohibited' || d.status === 'hefsek_day'),
       cleanDays: finalCalculatedDates.filter(d => d.status === 'clean_day'),
-      mikvahNight: finalCalculatedDates.find(d => d.status === 'mikvah_night') || null,
+      mikvahNight: finalCalculatedDates.find(d => d.status === 'mikvah_night') || undefined,
       nextVesatot: nextVesatotPredictions, // This remains future predictions
     };
   }
@@ -214,7 +214,7 @@ export class TaharaCalculator {
   private mergeAllCalculatedDates(
   prohibitedDates: CalculatedDate[],
   cleanDays: CalculatedDate[],
-  mikvahNight: CalculatedDate | null,
+  mikvahNight: CalculatedDate | undefined,
   futureVesatot: CalculatedVeset[]
 ): CalculatedDate[] {
   const dateMap = new Map<string, CalculatedDate>();
