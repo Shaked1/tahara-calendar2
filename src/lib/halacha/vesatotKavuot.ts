@@ -109,7 +109,7 @@ export function checkYom30Kavua(
     const diff = Math.round(
       (last3[i].date.getTime() - last3[i - 1].date.getTime()) / (1000 * 60 * 60 * 24)
     );
-    if (diff !== 30) return null;
+    if (diff !== 29) return null;
   }
 
   const onot = last3.map(e => e.onah);
@@ -227,7 +227,7 @@ function buildFutureDates(
 
       case 'yom_30':
         nextDate = new Date(baseDate);
-        nextDate.setDate(nextDate.getDate() + 30 * i);
+        nextDate.setDate(nextDate.getDate() + 29 * i);
         reason   = `וסת קבועה – יום ל' (פעם ${i})`;
         break;
 
@@ -282,6 +282,29 @@ export function analyzeKavuot(
   const sorted = [...vesetHistory].sort((a, b) => a.date.getTime() - b.date.getTime());
   const lastEvent = sorted[sorted.length - 1];
 
+   // ── 2. בדיקת יום ל' ──
+  const yom30 = checkYom30Kavua(sorted);
+  if (yom30) {
+    const futureDates = buildFutureDates('yom_30', lastEvent.date, yom30.onah);
+    const missed = countMissedOccurrences('yom_30', futureDates.map(f => f.date), sorted);
+
+    if (missed < 3) {
+      const kavua: VesetKavua = {
+        type:        'yom_30',
+        basedOn:     yom30.events,
+        nextDates:   futureDates,
+        missedCount: missed,
+        isActive:    true,
+        detail:      `כל 30 יום, ${yom30.onah === 'day' ? 'ביום' : 'בלילה'}`,
+      };
+      return {
+        activeKavua: kavua,
+        showTypes:   ['yom_30'],
+        message:     `✅ נקבעה וסת קבועה יום ל' — פרישה כל 30 יום`,
+      };
+    }
+  }
+
   // ── 1. בדיקת יום החודש ──
   const yomHachodesh = checkYomHachodeshKavua(sorted);
   if (yomHachodesh) {
@@ -301,29 +324,6 @@ export function analyzeKavuot(
         activeKavua: kavua,
         showTypes:   ['yom_hachodesh'],
         message:     `✅ נקבעה וסת קבועה ביום החודש — פרישה רק ביום ${yomHachodesh.hebrewDay} בחודש`,
-      };
-    }
-  }
-
-  // ── 2. בדיקת יום ל' ──
-  const yom30 = checkYom30Kavua(sorted);
-  if (yom30) {
-    const futureDates = buildFutureDates('yom_30', lastEvent.date, yom30.onah);
-    const missed = countMissedOccurrences('yom_30', futureDates.map(f => f.date), sorted);
-
-    if (missed < 3) {
-      const kavua: VesetKavua = {
-        type:        'yom_30',
-        basedOn:     yom30.events,
-        nextDates:   futureDates,
-        missedCount: missed,
-        isActive:    true,
-        detail:      `כל 30 יום, ${yom30.onah === 'day' ? 'ביום' : 'בלילה'}`,
-      };
-      return {
-        activeKavua: kavua,
-        showTypes:   ['yom_30'],
-        message:     `✅ נקבעה וסת קבועה יום ל' — פרישה כל 30 יום`,
       };
     }
   }
