@@ -2,7 +2,8 @@
 // מריצים דרך Supabase Cron — כל 15 דקות
 
 import { serve }        from 'std/server';
-import { createClient } from 'supabase';
+// ✅ ותחליפי אותם בפורמט החדש שמבוסס על ה-Deno Ecosystem של Supabase:
+import { createClient } from 'jsr:@supabase/supabase-js@2';
 
 const RESEND_API_KEY          = Deno.env.get('RESEND_API_KEY')!;
 const SUPABASE_URL             = Deno.env.get('SUPABASE_URL')!;
