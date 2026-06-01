@@ -1,4 +1,4 @@
-import type { Metadata } from 'next';
+import type { Metadata, Viewport } from 'next';
 import { Assistant, Frank_Ruhl_Libre } from 'next/font/google';
 import './globals.css';
 
@@ -19,17 +19,18 @@ export const metadata: Metadata = {
   title: 'מערכת לוח טהרה',
   description: 'מערכת הלכתית לניהול לוח טהרה (נידה)',
   manifest: '/manifest.json',
-  themeColor: '#6366f1',
-  viewport: {
-    width: 'device-width',
-    initialScale: 1,
-    maximumScale: 1,
-  },
   appleWebApp: {
     capable: true,
     statusBarStyle: 'default',
     title: 'לוח טהרה',
   },
+};
+
+export const viewport: Viewport = {
+  themeColor: '#6366f1',
+  width: 'device-width',
+  initialScale: 1,
+  maximumScale: 1,
 };
 
 export default function RootLayout({
