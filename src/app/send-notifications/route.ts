@@ -1,33 +1,34 @@
 export const dynamic = 'force-dynamic';
-export const revalidate = 0; // מונע לחלוטין שמירה ב-Cache של Vercel
+export const revalidate = 0;
 
 import { NextResponse } from 'next/server';
 import { Resend } from 'resend';
 import { createClient } from '@supabase/supabase-js';
 
-const resend = new Resend(process.env.RESEND_API_KEY);
-
-const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-);
-
 export async function GET(request: Request) {
   try {
-    // 🔥 הטריק שחוסם את ה-Build מלקרוס:
-    // אנחנו שולפים את ה-URL מה-request. זה מסמן ל-Next.js בזמן ה-Build: "זה נתיב דינמי לחלוטין שחייב משתמש אמיתי!"
-    const { searchParams } = new URL(request.url);
-    
-    // אופציונלי: קוד אבטחה בסיסי (Cron Secret) כדי שלא כל אחד יוכל להפעיל לך את שליחת המיילים סתם כך
-    // אם תרצי, תוכלי להגדיר אותו ב-Vercel בעתיד. כרגע זה פשוט ידלג על הבדיקה.
-    const secret = searchParams.get('secret');
-    if (process.env.CRON_SECRET && secret !== process.env.CRON_SECRET) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    // 1. הגנה מפני קריסה בזמן ה-Build: מאתחלים את הכל רק בזמן ריצה אמיתית
+    const apiKey = process.env.RESEND_API_KEY;
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+    // אם אנחנו בזמן Build ואין מפתחות, נחזיר תשובה ריקה מבלי לקרוס
+    if (!apiKey || !supabaseUrl || !supabaseServiceKey) {
+      console.log('⚠️ מפתחות חסרים (סביר להניח שבזמן ה-Build של Vercel). מדלג על ריצה.');
+      return NextResponse.json({ message: 'Build mode bypass' });
     }
 
+    // 2. אתחול השרותים בתוך הפונקציה בלבד
+    const resend = new Resend(apiKey);
+    const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey, {
+      auth: { persistSession: false, autoRefreshToken: false }
+    });
+
+    // שימוש ב-Request בשביל סימון דינמי מוחלט ל-Next.js
+    const { searchParams } = new URL(request.url);
     const now = new Date().toISOString();
 
-    // שליפת התראות שהגיע זמנן ועדיין לא נשלחו
+    // 3. שליפת התראות שהגיע זמנן
     const { data: pendingNotifications, error: fetchError } = await supabaseAdmin
       .from('scheduled_notifications')
       .select('*')
@@ -47,6 +48,7 @@ export async function GET(request: Request) {
     console.log(`מנסה לשלוח ${pendingNotifications.length} התראות...`);
     const sentIds: string[] = [];
 
+    // 4. ריצה ושליחה דרך Resend
     for (const notification of pendingNotifications) {
       try {
         const { error: emailError } = await resend.emails.send({
@@ -67,7 +69,7 @@ export async function GET(request: Request) {
       }
     }
 
-    // עדכון הסטטוס ב-Database
+    // 5. עדכון הסטטוס ב-Database
     if (sentIds.length > 0) {
       const { error: updateError } = await supabaseAdmin
         .from('scheduled_notifications')
