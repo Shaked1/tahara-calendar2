@@ -1,10 +1,10 @@
-export const dynamic = 'force-dynamic'; // 👈 מכריח את Next.js להתייחס לנתיב כאינטראקטיבי בלבד בזמן ריצה
+export const dynamic = 'force-dynamic';
+export const revalidate = 0; // מונע לחלוטין שמירה ב-Cache של Vercel
 
 import { NextResponse } from 'next/server';
 import { Resend } from 'resend';
 import { createClient } from '@supabase/supabase-js';
 
-// 1. אתחול Resend ו-Supabase
 const resend = new Resend(process.env.RESEND_API_KEY);
 
 const supabaseAdmin = createClient(
@@ -14,15 +14,25 @@ const supabaseAdmin = createClient(
 
 export async function GET(request: Request) {
   try {
-    // קבלת הזמן הנוכחי בפורמט ISO תקין
+    // 🔥 הטריק שחוסם את ה-Build מלקרוס:
+    // אנחנו שולפים את ה-URL מה-request. זה מסמן ל-Next.js בזמן ה-Build: "זה נתיב דינמי לחלוטין שחייב משתמש אמיתי!"
+    const { searchParams } = new URL(request.url);
+    
+    // אופציונלי: קוד אבטחה בסיסי (Cron Secret) כדי שלא כל אחד יוכל להפעיל לך את שליחת המיילים סתם כך
+    // אם תרצי, תוכלי להגדיר אותו ב-Vercel בעתיד. כרגע זה פשוט ידלג על הבדיקה.
+    const secret = searchParams.get('secret');
+    if (process.env.CRON_SECRET && secret !== process.env.CRON_SECRET) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     const now = new Date().toISOString();
 
-    // 2. שליפת התראות שהגיע זמנן (scheduled_for <= עכשיו) ושעדיין לא נשלחו (sent = false)
+    // שליפת התראות שהגיע זמנן ועדיין לא נשלחו
     const { data: pendingNotifications, error: fetchError } = await supabaseAdmin
       .from('scheduled_notifications')
       .select('*')
       .eq('sent', false)
-      .lte('scheduled_for', now); // השוואה חסינת אזורי זמן
+      .lte('scheduled_for', now);
 
     if (fetchError) throw fetchError;
 
@@ -37,13 +47,11 @@ export async function GET(request: Request) {
     console.log(`מנסה לשלוח ${pendingNotifications.length} התראות...`);
     const sentIds: string[] = [];
 
-    // 3. ריצה על ההתראות ושליחתן אחת אחת
     for (const notification of pendingNotifications) {
       try {
-        // בזמן פיתוח: שולח למייל המורשה שלך ב-Resend. בפרודקשן תחליפי ל-notification.user_email
         const { error: emailError } = await resend.emails.send({
           from: 'onboarding@resend.dev', 
-          to: 'shaked14782@gmail.com', // 👈 המייל המורשה שלך ב-Resend
+          to: 'shaked14782@gmail.com', // המייל המורשה שלך לפיתוח
           subject: notification.title,
           text: notification.body,
         });
@@ -59,7 +67,7 @@ export async function GET(request: Request) {
       }
     }
 
-    // 4. עדכון השורות שנשלחו בהצלחה ב-Database ל-sent = true
+    // עדכון הסטטוס ב-Database
     if (sentIds.length > 0) {
       const { error: updateError } = await supabaseAdmin
         .from('scheduled_notifications')
