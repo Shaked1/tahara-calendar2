@@ -1,8 +1,10 @@
+
 /**
  * דף לוח השנה הראשי - עם תפריט "קרא עוד"
  */
 
 'use client';
+export const dynamic = 'force-dynamic';
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
