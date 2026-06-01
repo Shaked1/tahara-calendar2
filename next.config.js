@@ -1,19 +1,21 @@
 /** @type {import('next').NextConfig} */
-const withPWA = require('next-pwa')({
-  dest: 'public',
-  disable: process.env.NODE_ENV === 'development',
-  register: true,
-  skipWaiting: true,
-});
-
 const nextConfig = {
-  reactStrictMode: true,
-  swcMinify: true,
-  i18n: {
-    locales: ['he'],
-    defaultLocale: 'he',
+  // מונע מ-Next לנסות לבנות חבילות שמשתמשות ב-Node.js APIs בצד השרת
+  experimental: {
+    serverComponentsExternalPackages: ['kosher-zmanim', '@hebcal/core'],
   },
-
+  webpack: (config, { isServer }) => {
+    if (!isServer) {
+      // מונע מ-webpack לנסות לבנות חבילות Node.js בצד הלקוח
+      config.resolve.fallback = {
+        ...config.resolve.fallback,
+        fs: false,
+        net: false,
+        tls: false,
+      };
+    }
+    return config;
+  },
 };
 
-module.exports = withPWA(nextConfig);
+module.exports = nextConfig;

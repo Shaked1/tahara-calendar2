@@ -41,9 +41,7 @@ export default function RootLayout({
   return (
     <html lang="he" dir="rtl" className={`${assistant.variable} ${frankRuhlLibre.variable}`} suppressHydrationWarning>
       <body className="font-sans bg-background text-foreground antialiased">
-        <main className="min-h-screen">
-          {children}
-        </main>
+        {children}
       </body>
     </html>
   );
