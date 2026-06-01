@@ -361,9 +361,11 @@ export async function saveAllNotifications(
 
   if (rows.length === 0) return;
 
-  const { error } = await supabase
-    .from('scheduled_notifications')
-    .insert(rows as any[]);
+// במקום להשתמש ב-as any[], נשתמש ב-Type מפורש ש-Supabase מבינה, 
+// או שנעביר את ה-any ישירות על כל האובייקט כדי לעקוף את ה-Strict Mode של ה-Insert
+  const { error } = await (supabase
+    .from('scheduled_notifications') as any)
+    .insert(rows);
 
   if (error) {
     console.error('Error saving notifications details:', error.message, error.details);
