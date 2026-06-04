@@ -1,6 +1,5 @@
-
 /**
- * דף לוח השנה הראשי - עם תפריט "קרא עוד"
+ * דף לוח השנה הראשי - כולל תפריט צד (Sidebar) ושדרוג תצוגת הסטטוס
  */
 
 'use client';
@@ -11,10 +10,10 @@ import { useRouter } from 'next/navigation';
 import { CalendarGrid } from '@/components/calendar/CalendarGrid';
 import { AddVesetModal } from '@/components/calendar/AddVesetModal';
 import { AddHefsekhModal } from '@/components/calendar/AddHefsekhModal';
-import { ReadMoreMenu } from '@/components/calendar/ReadMoreMenu';
+import { SidebarMenu } from '@/components/calendar/SidebarMenu'; // רכיב תפריט הצד החדש
 import { Button } from '@/components/ui/Button';
 import { Card, CardContent } from '@/components/ui/Card';
-import { Plus, Settings, LogOut } from 'lucide-react';
+import { Plus, Settings, LogOut, Menu } from 'lucide-react'; // הוספת אייקון המבורגר
 import { supabase, getCurrentUser, signOut } from '@/lib/supabase/client';
 import { getUserHistory, addVesetEvent } from '@/lib/supabase/vesatot';
 import { TaharaCalculator } from '@/lib/halacha/calculator';
@@ -26,13 +25,14 @@ export default function CalendarPage() {
   const [loading, setLoading] = useState(true);
   const [showAddModal, setShowAddModal] = useState(false);
   const [showHefsekhModal, setShowHefsekhModal] = useState(false);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false); // סטייט לשליטה בתפריט הצד
   const [history, setHistory] = useState<VesetHistory>({ events: [], hefsekhTaharot: [] });
   const [calculatedDates, setCalculatedDates] = useState<Map<string, any>>(new Map());
   const [settings, setSettings] = useState<HalachicSettings | null>(null);
   const [location, setLocation] = useState<UserLocation | null>(null);
   const [userId, setUserId] = useState<string | null>(null);
 
-  // ── Hook להתראות — חייב להיות ברמת הקומפוננטה, לא בתוך async function ──
+  // ── Hook להתראות ──
   const { askPermission, scheduled } = useNotifications({
     userId,
     history,
@@ -173,16 +173,28 @@ export default function CalendarPage() {
   }
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-screen bg-background relative overflow-x-hidden">
+      {/* תפריט צד (Sidebar Drawer) */}
+      <SidebarMenu isOpen={isSidebarOpen} onClose={() => setIsSidebarOpen(false)} />
+
       {/* Header */}
       <header className="border-b bg-card sticky top-0 z-10">
         <div className="container mx-auto px-4 py-4 flex items-center justify-between">
-          <h1 className="text-2xl font-bold font-hebrew">לוח הטהרה שלי</h1>
+          
+          {/* כפתור המבורגר וכותרת האפליקציה */}
+          <div className="flex items-center gap-3">
+            <Button 
+              variant="ghost" 
+              size="icon" 
+              onClick={() => setIsSidebarOpen(true)}
+              className="hover:bg-accent rounded-full"
+            >
+              <Menu className="h-6 w-6" />
+            </Button>
+            <h1 className="text-2xl font-bold font-hebrew">לוח הטהרה שלי</h1>
+          </div>
 
           <div className="flex gap-2 items-center flex-wrap justify-end">
-            {/* תפריט קרא עוד */}
-            <ReadMoreMenu />
-
             {/* כפתור הפעלת התראות */}
             <Button
               variant="outline"
@@ -255,7 +267,6 @@ export default function CalendarPage() {
         onClose={() => setShowAddModal(false)}
         onSubmit={handleAddVeset}
         location={location || undefined}
-        
       />
 
       <AddHefsekhModal
