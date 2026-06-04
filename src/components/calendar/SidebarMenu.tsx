@@ -1,8 +1,8 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation'; // <-- יבוא הראוטר המובנה של Next.js
-import { X, BookOpen, CheckSquare, MapPin, ExternalLink, ChevronDown } from 'lucide-react';
+import { useRouter } from 'next/navigation';
+import { X, BookOpen, CheckSquare, MapPin, ExternalLink, ChevronDown, Heart } from 'lucide-react'; // <-- הוספנו את אייקון Heart
 import { cn } from '@/lib/utils';
 
 // המקורות ההלכתיים שלקחנו מ-ReadMoreMenu שלך
@@ -42,7 +42,7 @@ interface SidebarMenuProps {
 }
 
 export function SidebarMenu({ isOpen, onClose }: SidebarMenuProps) {
-  const router = useRouter(); // <-- הגדרת הראוטר בתוך הקומפוננטה
+  const router = useRouter();
   const [isReadMoreOpen, setIsReadMoreOpen] = useState(false);
 
   useEffect(() => {
@@ -127,7 +127,7 @@ export function SidebarMenu({ isOpen, onClose }: SidebarMenuProps) {
           {/* אפשרות 2: מעבר לעמוד הכנות למקווה */}
           <button
             onClick={() => {
-              router.push('/mikveh-prep'); // עכשיו הראוטר מוגדר ולא יקרוס
+              router.push('/mikveh-prep');
               onClose();
             }}
             className="w-full flex items-center justify-between p-3.5 border rounded-xl bg-white text-right font-medium text-sm text-gray-700 hover:bg-slate-50 transition-colors group"
@@ -140,18 +140,34 @@ export function SidebarMenu({ isOpen, onClose }: SidebarMenuProps) {
           </button>
 
           {/* אפשרות 3: מציאת מקווה קרוב */}
-          <a
-            href="https://mymikve.org.il/" // קישור לדף חיפוש מקוואות בישראל
-            target="_blank"
-            rel="noopener noreferrer"
+          <button
+            onClick={() => {
+              router.push('/find-mikveh');
+              onClose();
+            }}
             className="w-full flex items-center justify-between p-3.5 border rounded-xl bg-white text-right font-medium text-sm text-gray-700 hover:bg-slate-50 transition-colors group"
           >
             <div className="flex items-center gap-3">
               <MapPin className="h-5 w-5 text-rose-600" />
               <span>מציאת מקווה קרוב</span>
             </div>
-            <ExternalLink className="h-4 w-4 text-gray-400 group-hover:text-rose-600 transition-colors" />
-          </a>
+            <ChevronDown className="h-4 w-4 text-gray-400 -rotate-90 group-hover:text-rose-600 transition-transform" />
+          </button>
+
+          {/* ✨ אפשרות 4 החדשה: איתור בודקת טהרה */}
+          <button
+            onClick={() => {
+              router.push('/find-examiner'); // ניתוב לעמוד ההטמעה החדש
+              onClose();
+            }}
+            className="w-full flex items-center justify-between p-3.5 border rounded-xl bg-white text-right font-medium text-sm text-gray-700 hover:bg-slate-50 transition-colors group"
+          >
+            <div className="flex items-center gap-3">
+              <Heart className="h-5 w-5 text-pink-500 fill-pink-50/50" />
+              <span>איתור בודקת טהרה</span>
+            </div>
+            <ChevronDown className="h-4 w-4 text-gray-400 -rotate-90 group-hover:text-pink-500 transition-transform" />
+          </button>
 
         </div>
 
