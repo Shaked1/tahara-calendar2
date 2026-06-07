@@ -45,7 +45,12 @@ interface Mikveh {
   lon: number;
 }
 
-// 1. מאזין לתנועות המפה - מתוקן למניעת לופים
+// Cast once at module level — avoids inline any casts that trigger missing-rule errors
+/* eslint-disable @typescript-eslint/no-explicit-any */
+const supabaseAny = supabase as any;
+/* eslint-enable @typescript-eslint/no-explicit-any */
+
+// 1. מאזין לתנועות המפה
 function MapEventsHandler({ onBoundsChange }: { onBoundsChange: (bounds: L.LatLngBounds) => void }) {
   const map = useMapEvents({
     moveend() {
@@ -53,7 +58,6 @@ function MapEventsHandler({ onBoundsChange }: { onBoundsChange: (bounds: L.LatLn
     },
   });
 
-  // מריץ פעם אחת בלבד בטעינה הראשונית
   useEffect(() => {
     onBoundsChange(map.getBounds());
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -62,7 +66,7 @@ function MapEventsHandler({ onBoundsChange }: { onBoundsChange: (bounds: L.LatLn
   return null;
 }
 
-// 2. פונקציית שינוי מיקום מפה
+// 2. שינוי מיקום מפה
 function ChangeViewOnLocation({ center }: { center: [number, number] | null }) {
   const map = useMap();
   useEffect(() => {
@@ -97,7 +101,7 @@ function SearchControl() {
       params: { 'accept-language': 'he' },
     });
 
-    // @ts-ignore – GeoSearchControl types are incomplete
+    // @ts-ignore
     const searchControl = new GeoSearchControl({
       provider,
       style: 'bar',
@@ -125,11 +129,8 @@ export default function MikvehMap() {
   const [loading, setLoading] = useState(false);
   const [userLocation, setUserLocation] = useState<[number, number] | null>(null);
   const [initialCenter, setInitialCenter] = useState<[number, number]>(DEFAULT_CENTER);
-
-  // שומר על מזהה הבוקס האחרון כדי למנוע קריאות כפולות לאותו מקום
   const lastBoundsRef = useRef<string>('');
 
-  // בקשת מיקום מהדפדפן
   useEffect(() => {
     if ('geolocation' in navigator) {
       navigator.geolocation.getCurrentPosition(
@@ -159,16 +160,12 @@ export default function MikvehMap() {
     const northEast = bounds.getNorthEast();
 
     const boundsKey = `${southWest.lat.toFixed(3)},${southWest.lng.toFixed(3)},${northEast.lat.toFixed(3)},${northEast.lng.toFixed(3)}`;
-
     if (boundsKey === lastBoundsRef.current) return;
     lastBoundsRef.current = boundsKey;
 
     setLoading(true);
     try {
-      // Cast to any to work around the generated types for the RPC call.
-      // The actual DB function signature is defined in database.ts → Functions.
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { data: rpcData, error: rpcError } = await (supabase as any).rpc(
+      const { data: rpcData, error: rpcError } = await supabaseAny.rpc(
         'get_mikvaot_in_bounds',
         {
           p_min_lat: southWest.lat,
@@ -182,14 +179,11 @@ export default function MikvehMap() {
 
       let data: Mikveh[] = rpcData ?? [];
 
-      // גלגל הצלה: אם לא חזרו מקוואות בטווח הנוכחי, נביא את הקרובים ביותר
       if (data.length === 0) {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const { data: allData, error: allError } = await (supabase as any)
+        const { data: allData, error: allError } = await supabaseAny
           .from('mikvaot')
           .select('*')
           .limit(50);
-
         if (!allError && allData) {
           data = allData as Mikveh[];
         }
@@ -256,9 +250,7 @@ export default function MikvehMap() {
 
                   <div className="flex items-center gap-1.5 text-xs text-gray-700 mt-1">
                     <MapPin className="h-3 w-3 text-gray-400 flex-shrink-0" />
-                    <span>
-                      {mikveh.mikveAddress}, {mikveh.mikveCity}
-                    </span>
+                    <span>{mikveh.mikveAddress}, {mikveh.mikveCity}</span>
                   </div>
 
                   {mikveh.mikvePhone && (
@@ -270,33 +262,24 @@ export default function MikvehMap() {
                     </div>
                   )}
 
-                  {(mikveh.activityHoursWinter ||
-                    mikveh.activityHoursSummer ||
-                    mikveh.activityHoursShabat) && (
+                  {(mikveh.activityHoursWinter || mikveh.activityHoursSummer || mikveh.activityHoursShabat) && (
                     <div className="flex flex-col gap-1 border-t pt-1.5 mt-1 bg-slate-50 p-2 rounded-lg text-right">
                       {mikveh.activityHoursWinter && (
                         <div className="flex items-start gap-1 text-[11px] text-gray-600">
                           <Clock className="h-2.5 w-2.5 text-indigo-500 mt-0.5 flex-shrink-0" />
-                          <span>
-                            <strong>חורף:</strong> {mikveh.activityHoursWinter}
-                          </span>
+                          <span><strong>חורף:</strong> {mikveh.activityHoursWinter}</span>
                         </div>
                       )}
                       {mikveh.activityHoursSummer && (
                         <div className="flex items-start gap-1 text-[11px] text-gray-600">
                           <Clock className="h-2.5 w-2.5 text-indigo-500 mt-0.5 flex-shrink-0" />
-                          <span>
-                            <strong>קיץ:</strong> {mikveh.activityHoursSummer}
-                          </span>
+                          <span><strong>קיץ:</strong> {mikveh.activityHoursSummer}</span>
                         </div>
                       )}
                       {mikveh.activityHoursShabat && (
                         <div className="flex items-start gap-1 text-[11px] text-gray-600 border-t border-gray-200/60 pt-1 mt-1">
                           <Clock className="h-2.5 w-2.5 text-emerald-600 mt-0.5 flex-shrink-0" />
-                          <span>
-                            <strong className="text-emerald-700">ערב שבת/חג:</strong>{' '}
-                            {mikveh.activityHoursShabat}
-                          </span>
+                          <span><strong className="text-emerald-700">ערב שבת/חג:</strong> {mikveh.activityHoursShabat}</span>
                         </div>
                       )}
                     </div>

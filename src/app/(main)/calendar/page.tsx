@@ -1,19 +1,19 @@
 /**
- * דף לוח השנה הראשי - כולל תפריט צד (Sidebar) ושדרוג תצוגת הסטטוס
+ * דף לוח השנה הראשי
  */
 
 'use client';
 export const dynamic = 'force-dynamic';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { CalendarGrid } from '@/components/calendar/CalendarGrid';
 import { AddVesetModal } from '@/components/calendar/AddVesetModal';
 import { AddHefsekhModal } from '@/components/calendar/AddHefsekhModal';
-import { SidebarMenu } from '@/components/calendar/SidebarMenu'; // רכיב תפריט הצד החדש
+import { SidebarMenu } from '@/components/calendar/SidebarMenu';
 import { Button } from '@/components/ui/Button';
 import { Card, CardContent } from '@/components/ui/Card';
-import { Plus, Settings, LogOut, Menu } from 'lucide-react'; // הוספת אייקון המבורגר
+import { Plus, Settings, LogOut, Menu } from 'lucide-react';
 import { supabase, getCurrentUser, signOut } from '@/lib/supabase/client';
 import { getUserHistory, addVesetEvent } from '@/lib/supabase/vesatot';
 import { TaharaCalculator } from '@/lib/halacha/calculator';
@@ -25,14 +25,13 @@ export default function CalendarPage() {
   const [loading, setLoading] = useState(true);
   const [showAddModal, setShowAddModal] = useState(false);
   const [showHefsekhModal, setShowHefsekhModal] = useState(false);
-  const [isSidebarOpen, setIsSidebarOpen] = useState(false); // סטייט לשליטה בתפריט הצד
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [history, setHistory] = useState<VesetHistory>({ events: [], hefsekhTaharot: [] });
   const [calculatedDates, setCalculatedDates] = useState<Map<string, any>>(new Map());
   const [settings, setSettings] = useState<HalachicSettings | null>(null);
   const [location, setLocation] = useState<UserLocation | null>(null);
   const [userId, setUserId] = useState<string | null>(null);
 
-  // ── Hook להתראות ──
   const { askPermission, scheduled } = useNotifications({
     userId,
     history,
@@ -40,11 +39,21 @@ export default function CalendarPage() {
     location,
   });
 
-  useEffect(() => {
-    loadUserData();
+  const calculateDates = useCallback((
+    hist: VesetHistory,
+    sett: HalachicSettings,
+    loc: UserLocation
+  ) => {
+    const calculator = new TaharaCalculator(sett, loc);
+    const startDate = new Date();
+    startDate.setMonth(startDate.getMonth() - 11);
+    const endDate = new Date();
+    endDate.setMonth(endDate.getMonth() + 4);
+    const dateMap = calculator.calculateForRange(startDate, endDate, hist);
+    setCalculatedDates(dateMap);
   }, []);
 
-  const loadUserData = async (isRefresh = false) => {
+  const loadUserData = useCallback(async () => {
     try {
       const user = await getCurrentUser();
       if (!user) {
@@ -93,25 +102,13 @@ export default function CalendarPage() {
       console.error('Error loading user data:', error);
       alert('שגיאה בטעינת נתונים');
     } finally {
-      if (!isRefresh) {
-        setLoading(false);
-      }
+      setLoading(false);
     }
-  };
+  }, [router, calculateDates]);
 
-  const calculateDates = (
-    hist: VesetHistory,
-    sett: HalachicSettings,
-    loc: UserLocation
-  ) => {
-    const calculator = new TaharaCalculator(sett, loc);
-    const startDate = new Date();
-    startDate.setMonth(startDate.getMonth() - 11);
-    const endDate = new Date();
-    endDate.setMonth(endDate.getMonth() + 4);
-    const dateMap = calculator.calculateForRange(startDate, endDate, hist);
-    setCalculatedDates(dateMap);
-  };
+  useEffect(() => {
+    loadUserData();
+  }, [loadUserData]);
 
   const handleAddVeset = async (data: any) => {
     if (!userId || !settings || !location) return;
@@ -174,18 +171,14 @@ export default function CalendarPage() {
 
   return (
     <div className="min-h-screen bg-background relative overflow-x-hidden">
-      {/* תפריט צד (Sidebar Drawer) */}
       <SidebarMenu isOpen={isSidebarOpen} onClose={() => setIsSidebarOpen(false)} />
 
-      {/* Header */}
       <header className="border-b bg-card sticky top-0 z-10">
         <div className="container mx-auto px-4 py-4 flex items-center justify-between">
-          
-          {/* כפתור המבורגר וכותרת האפליקציה */}
           <div className="flex items-center gap-3">
-            <Button 
-              variant="ghost" 
-              size="icon" 
+            <Button
+              variant="ghost"
+              size="icon"
               onClick={() => setIsSidebarOpen(true)}
               className="hover:bg-accent rounded-full"
             >
@@ -195,7 +188,6 @@ export default function CalendarPage() {
           </div>
 
           <div className="flex gap-2 items-center flex-wrap justify-end">
-            {/* כפתור הפעלת התראות */}
             <Button
               variant="outline"
               size="sm"
@@ -223,7 +215,6 @@ export default function CalendarPage() {
         </div>
       </header>
 
-      {/* Main Content */}
       <main className="container mx-auto py-8">
         {history.events.length > 0 && (
           <Card className="mb-6 bg-blue-50 border-blue-200">

@@ -1,6 +1,5 @@
 /**
  * useNotifications — hook לניהול התראות
- * רושם Service Worker, מבקש הרשאה, ומתזמן את כל ההתראות
  */
 
 'use client';
@@ -14,7 +13,6 @@ import {
   HalachicSettings,
   UserLocation,
   VesetHistory,
-  CalculatedDate,
 } from '@/types';
 import { TaharaCalculator } from '@/lib/halacha/calculator';
 import { supabase } from '@/lib/supabase/client';
@@ -59,22 +57,18 @@ export function useNotifications({
 
     setLoading(true);
     try {
-      // קבלת מייל המשתמשת
       const { data: { user } } = await supabase.auth.getUser();
       const userEmail = user?.email ?? '';
 
-      // חישוב תוצאות
       const calculator = new TaharaCalculator(settings, location);
       const result     = calculator.calculateAll(history);
 
-      // מיון אירועים
       const sortedEvents = [...history.events].sort(
         (a, b) => b.date.getTime() - a.date.getTime()
       );
       const latestVeset = sortedEvents[0];
       if (!latestVeset) return;
 
-      // מציאת ההפסק הנוכחי
       const currentHefsekh = history.hefsekhTaharot
         .filter(h => h.vesetEventId === latestVeset.id)
         .sort((a, b) => b.date.getTime() - a.date.getTime())[0] ?? null;
@@ -92,7 +86,6 @@ export function useNotifications({
       });
 
       setScheduled(count);
-      console.log(`✅ תוזמנו ${count} התראות`);
     } catch (e) {
       console.error('Error scheduling notifications:', e);
     } finally {
@@ -105,11 +98,7 @@ export function useNotifications({
     if (userId && settings && location && history.events.length > 0) {
       scheduleNotifications();
     }
-  }, [
-    userId,
-    history.events.length,
-    history.hefsekhTaharot.length,
-  ]);
+  }, [scheduleNotifications, userId, settings, location, history.events.length, history.hefsekhTaharot.length]);
 
   return { pushGranted, scheduled, loading, askPermission, scheduleNotifications };
 }
