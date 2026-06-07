@@ -18,7 +18,7 @@ const mikvehIcon = new L.Icon({
   iconSize: [25, 41],
   iconAnchor: [12, 41],
   popupAnchor: [1, -34],
-  shadowSize: [41, 41]
+  shadowSize: [41, 41],
 });
 
 const userLocationIcon = new L.Icon({
@@ -27,7 +27,7 @@ const userLocationIcon = new L.Icon({
   iconSize: [25, 41],
   iconAnchor: [12, 41],
   popupAnchor: [1, -34],
-  shadowSize: [41, 41]
+  shadowSize: [41, 41],
 });
 
 interface Mikveh {
@@ -56,7 +56,8 @@ function MapEventsHandler({ onBoundsChange }: { onBoundsChange: (bounds: L.LatLn
   // מריץ פעם אחת בלבד בטעינה הראשונית
   useEffect(() => {
     onBoundsChange(map.getBounds());
-  }, []); // מערך תלויות ריק מונע ריצה בלופ
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return null;
 }
@@ -96,9 +97,9 @@ function SearchControl() {
       params: { 'accept-language': 'he' },
     });
 
-    // @ts-ignore
+    // @ts-ignore – GeoSearchControl types are incomplete
     const searchControl = new GeoSearchControl({
-      provider: provider,
+      provider,
       style: 'bar',
       showMarker: false,
       showPopup: false,
@@ -124,7 +125,7 @@ export default function MikvehMap() {
   const [loading, setLoading] = useState(false);
   const [userLocation, setUserLocation] = useState<[number, number] | null>(null);
   const [initialCenter, setInitialCenter] = useState<[number, number]>(DEFAULT_CENTER);
-  
+
   // שומר על מזהה הבוקס האחרון כדי למנוע קריאות כפולות לאותו מקום
   const lastBoundsRef = useRef<string>('');
 
@@ -153,58 +154,54 @@ export default function MikvehMap() {
     }
   };
 
-  // עטיפת הפונקציה ב-useCallback מונעת מ-MapEventsHandler לקרוא לה בלופ אינסופי
   const fetchMikvaotInBounds = useCallback(async (bounds: L.LatLngBounds) => {
     const southWest = bounds.getSouthWest();
     const northEast = bounds.getNorthEast();
-    
-    // יצירת מפתח ייחודי לגבולות הנוכחיים
+
     const boundsKey = `${southWest.lat.toFixed(3)},${southWest.lng.toFixed(3)},${northEast.lat.toFixed(3)},${northEast.lng.toFixed(3)}`;
-    
-    // אם לא באמת זזנו מרחק משמעותי, אל תפנה לשרת מחדש
+
     if (boundsKey === lastBoundsRef.current) return;
     lastBoundsRef.current = boundsKey;
 
     setLoading(true);
-   try {
-    console.log('🔍 פונה ל-RPC עם גבולות מסך מדוייקים:', {
-      p_min_lat: southWest.lat, p_max_lat: northEast.lat,
-      p_min_lon: southWest.lng, p_max_lon: northEast.lng
-    });
+    try {
+      // Cast to any to work around the generated types for the RPC call.
+      // The actual DB function signature is defined in database.ts → Functions.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data: rpcData, error: rpcError } = await (supabase as any).rpc(
+        'get_mikvaot_in_bounds',
+        {
+          p_min_lat: southWest.lat,
+          p_max_lat: northEast.lat,
+          p_min_lon: southWest.lng,
+          p_max_lon: northEast.lng,
+        }
+      );
 
-    // קריאה ל-RPC המעודכן (שימי לב ששמות הפרמטרים השתנו ל-p_...)
-    let { data, error } = await supabase.rpc('get_mikvaot_in_bounds', {
-      p_min_lat: southWest.lat,
-      p_max_lat: northEast.lat,
-      p_min_lon: southWest.lng,
-      p_max_lon: northEast.lng,
-    });
+      if (rpcError) throw rpcError;
 
-    if (error) throw error;
+      let data: Mikveh[] = rpcData ?? [];
 
-    // גלגל הצלה: אם לא חזרו מקוואות בטווח הנוכחי, נביא את המקוואות הקרובים ביותר מהטבלה בכל זאת
-    if (!data || data.length === 0) {
-      console.log('⚠️ ה-RPC החזיר 0 תוצאות בטווח המדויק. מבצע שליפת הגנה גלובלית מכל הטבלה...');
-      const { data: allData, error: allError } = await supabase
-        .from('mikvaot')
-        .select('*')
-        .limit(50); // מביא את 50 הראשונים כדי שהמפה לא תישאר ריקה
-      
-      if (!allError && allData) {
-        data = allData;
+      // גלגל הצלה: אם לא חזרו מקוואות בטווח הנוכחי, נביא את הקרובים ביותר
+      if (data.length === 0) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const { data: allData, error: allError } = await (supabase as any)
+          .from('mikvaot')
+          .select('*')
+          .limit(50);
+
+        if (!allError && allData) {
+          data = allData as Mikveh[];
+        }
       }
+
+      setMikvaot(data);
+    } catch (err) {
+      console.error('Error fetching mikvaot:', err);
+    } finally {
+      setLoading(false);
     }
-    
-    console.log(`📊 סה"כ מקוואות המוצגים כרגע על המפה: ${data?.length || 0}`, data);
-    setMikvaot(data || []);
-
-  } catch (err) {
-    console.error('Error fetching mikvaot:', err);
-  } finally {
-    setLoading(false);
-  }
   }, []);
-
 
   return (
     <div className="flex flex-col h-[calc(100vh-140px)] w-full gap-4 relative">
@@ -234,7 +231,7 @@ export default function MikvehMap() {
             attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
             url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
           />
-          
+
           <SearchControl />
           <MapEventsHandler onBoundsChange={fetchMikvaotInBounds} />
           <ChangeViewOnLocation center={initialCenter} />
@@ -256,10 +253,12 @@ export default function MikvehMap() {
                   <h3 className="font-bold text-sm text-indigo-900 border-b pb-1 m-0">
                     {mikveh.mikveName}
                   </h3>
-                  
+
                   <div className="flex items-center gap-1.5 text-xs text-gray-700 mt-1">
                     <MapPin className="h-3 w-3 text-gray-400 flex-shrink-0" />
-                    <span>{mikveh.mikveAddress}, {mikveh.mikveCity}</span>
+                    <span>
+                      {mikveh.mikveAddress}, {mikveh.mikveCity}
+                    </span>
                   </div>
 
                   {mikveh.mikvePhone && (
@@ -271,29 +270,37 @@ export default function MikvehMap() {
                     </div>
                   )}
 
-                    {/* שעות פעילות חורף/קיץ/שבת דינמיות */}
-                    {(mikveh.activityHoursWinter || mikveh.activityHoursSummer || mikveh.activityHoursShabat) && (
+                  {(mikveh.activityHoursWinter ||
+                    mikveh.activityHoursSummer ||
+                    mikveh.activityHoursShabat) && (
                     <div className="flex flex-col gap-1 border-t pt-1.5 mt-1 bg-slate-50 p-2 rounded-lg text-right">
-                        {mikveh.activityHoursWinter && (
+                      {mikveh.activityHoursWinter && (
                         <div className="flex items-start gap-1 text-[11px] text-gray-600">
-                            <Clock className="h-2.5 w-2.5 text-indigo-500 mt-0.5 flex-shrink-0" />
-                            <span><strong>חורף:</strong> {mikveh.activityHoursWinter}</span>
+                          <Clock className="h-2.5 w-2.5 text-indigo-500 mt-0.5 flex-shrink-0" />
+                          <span>
+                            <strong>חורף:</strong> {mikveh.activityHoursWinter}
+                          </span>
                         </div>
-                        )}
-                        {mikveh.activityHoursSummer && (
+                      )}
+                      {mikveh.activityHoursSummer && (
                         <div className="flex items-start gap-1 text-[11px] text-gray-600">
-                            <Clock className="h-2.5 w-2.5 text-indigo-500 mt-0.5 flex-shrink-0" />
-                            <span><strong>קיץ:</strong> {mikveh.activityHoursSummer}</span>
+                          <Clock className="h-2.5 w-2.5 text-indigo-500 mt-0.5 flex-shrink-0" />
+                          <span>
+                            <strong>קיץ:</strong> {mikveh.activityHoursSummer}
+                          </span>
                         </div>
-                        )}
-                        {mikveh.activityHoursShabat && (
+                      )}
+                      {mikveh.activityHoursShabat && (
                         <div className="flex items-start gap-1 text-[11px] text-gray-600 border-t border-gray-200/60 pt-1 mt-1">
-                            <Clock className="h-2.5 w-2.5 text-emerald-600 mt-0.5 flex-shrink-0" />
-                            <span><strong className="text-emerald-700">ערב שבת/חג:</strong> {mikveh.activityHoursShabat}</span>
+                          <Clock className="h-2.5 w-2.5 text-emerald-600 mt-0.5 flex-shrink-0" />
+                          <span>
+                            <strong className="text-emerald-700">ערב שבת/חג:</strong>{' '}
+                            {mikveh.activityHoursShabat}
+                          </span>
                         </div>
-                        )}
+                      )}
                     </div>
-                    )}
+                  )}
 
                   {mikveh.accessability && mikveh.accessability !== 'ללא' && (
                     <div className="flex items-center gap-1 text-[11px] text-emerald-700 font-medium bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-100">

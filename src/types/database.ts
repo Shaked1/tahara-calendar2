@@ -160,12 +160,115 @@ export interface Database {
           created_at?: string;
         };
       };
+      mikvaot: {
+        Row: {
+          id: number;
+          mikveName: string;
+          mikveCity: string;
+          mikveAddress: string;
+          mikvePhone: string | null;
+          responsibleWorker: string | null;
+          accessability: string | null;
+          activityHoursShabat: string | null;
+          activityHoursWinter: string | null;
+          activityHoursSummer: string | null;
+          lat: number;
+          lon: number;
+        };
+        Insert: {
+          id?: number;
+          mikveName: string;
+          mikveCity: string;
+          mikveAddress: string;
+          mikvePhone?: string | null;
+          responsibleWorker?: string | null;
+          accessability?: string | null;
+          activityHoursShabat?: string | null;
+          activityHoursWinter?: string | null;
+          activityHoursSummer?: string | null;
+          lat: number;
+          lon: number;
+        };
+        Update: {
+          id?: number;
+          mikveName?: string;
+          mikveCity?: string;
+          mikveAddress?: string;
+          mikvePhone?: string | null;
+          responsibleWorker?: string | null;
+          accessability?: string | null;
+          activityHoursShabat?: string | null;
+          activityHoursWinter?: string | null;
+          activityHoursSummer?: string | null;
+          lat?: number;
+          lon?: number;
+        };
+      };
+      scheduled_notifications: {
+        Row: {
+          id: string;
+          user_id: string;
+          user_email: string | null;
+          scheduled_for: string;
+          title: string;
+          body: string;
+          type: string;
+          sent: boolean;
+          sent_at: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          user_email?: string | null;
+          scheduled_for: string;
+          title: string;
+          body: string;
+          type: string;
+          sent?: boolean;
+          sent_at?: string | null;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          user_email?: string | null;
+          scheduled_for?: string;
+          title?: string;
+          body?: string;
+          type?: string;
+          sent?: boolean;
+          sent_at?: string | null;
+          created_at?: string;
+        };
+      };
     };
     Views: {
       [_ in never]: never;
     };
     Functions: {
-      [_ in never]: never;
+      get_mikvaot_in_bounds: {
+        Args: {
+          p_min_lat: number;
+          p_max_lat: number;
+          p_min_lon: number;
+          p_max_lon: number;
+        };
+        Returns: Array<{
+          id: number;
+          mikveName: string;
+          mikveCity: string;
+          mikveAddress: string;
+          mikvePhone: string | null;
+          responsibleWorker: string | null;
+          accessability: string | null;
+          activityHoursShabat: string | null;
+          activityHoursWinter: string | null;
+          activityHoursSummer: string | null;
+          lat: number;
+          lon: number;
+        }>;
+      };
     };
     Enums: {
       [_ in never]: never;
