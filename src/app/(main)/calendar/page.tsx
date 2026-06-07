@@ -1,5 +1,5 @@
 /**
- * דף לוח השנה הראשי
+ * דף לוח השנה הראשי - מותאם מובייל
  */
 
 'use client';
@@ -13,7 +13,7 @@ import { AddHefsekhModal } from '@/components/calendar/AddHefsekhModal';
 import { SidebarMenu } from '@/components/calendar/SidebarMenu';
 import { Button } from '@/components/ui/Button';
 import { Card, CardContent } from '@/components/ui/Card';
-import { Plus, Settings, LogOut, Menu } from 'lucide-react';
+import { Plus, Settings, LogOut, Menu, Bell, CalendarIcon } from 'lucide-react';
 import { supabase, getCurrentUser, signOut } from '@/lib/supabase/client';
 import { getUserHistory, addVesetEvent } from '@/lib/supabase/vesatot';
 import { TaharaCalculator } from '@/lib/halacha/calculator';
@@ -170,60 +170,76 @@ export default function CalendarPage() {
   }
 
   return (
-    <div className="min-h-screen bg-background relative overflow-x-hidden">
+    <div className="min-h-screen bg-background relative overflow-x-hidden pb-24 md:pb-8">
       <SidebarMenu isOpen={isSidebarOpen} onClose={() => setIsSidebarOpen(false)} />
 
-      <header className="border-b bg-card sticky top-0 z-10">
-        <div className="container mx-auto px-4 py-4 flex items-center justify-between">
-          <div className="flex items-center gap-3">
+      {/* Header מותאם רספונסיבית */}
+      <header className="border-b bg-card sticky top-0 z-10 shadow-sm">
+        <div className="container mx-auto px-4 py-3 md:py-4 flex items-center justify-between">
+          <div className="flex items-center gap-2 md:gap-3">
             <Button
               variant="ghost"
               size="icon"
               onClick={() => setIsSidebarOpen(true)}
-              className="hover:bg-accent rounded-full"
+              className="hover:bg-accent rounded-full h-10 w-10"
             >
-              <Menu className="h-6 w-6" />
+              <Menu className="h-5 w-5 md:h-6 md:w-6" />
             </Button>
-            <h1 className="text-2xl font-bold font-hebrew">לוח הטהרה שלי</h1>
+            <h1 className="text-lg md:text-2xl font-bold font-hebrew text-indigo-950 truncate max-w-[150px] xs:max-w-none">
+              לוח הטהרה שלי
+            </h1>
           </div>
 
-          <div className="flex gap-2 items-center flex-wrap justify-end">
+          <div className="flex gap-1 md:gap-2 items-center">
+            {/* כפתור התראות מותאם */}
             <Button
-              variant="outline"
-              size="sm"
+              variant="ghost"
+              size="icon"
               onClick={askPermission}
+              className="relative h-9 w-9 rounded-full"
               title={`התראות${scheduled > 0 ? ` (${scheduled} מתוזמנות)` : ''}`}
             >
-              🔔{scheduled > 0 && <span className="mr-1 text-xs">{scheduled}</span>}
+              <Bell className="h-5 w-5 text-gray-600" />
+              {scheduled > 0 && (
+                <span className="absolute -top-0.5 -right-0.5 bg-indigo-600 text-white text-[10px] font-bold rounded-full h-4 w-4 flex items-center justify-center">
+                  {scheduled}
+                </span>
+              )}
             </Button>
 
-            <Button variant="default" onClick={() => setShowAddModal(true)}>
-              <Plus className="h-5 w-5 ml-2" />
-              הוסף וסת
+            {/* כפתורי הוספה - יוצגו ב-Header רק במסכים רחבים (מחשב) */}
+            <div className="hidden md:flex gap-2">
+              <Button variant="default" onClick={() => setShowAddModal(true)}>
+                <Plus className="h-5 w-5 ml-2" />
+                הוסף וסת
+              </Button>
+              <Button variant="secondary" onClick={() => setShowHefsekhModal(true)}>
+                <Plus className="h-5 w-5 ml-2" />
+                הפסק טהרה
+              </Button>
+            </div>
+
+            {/* כפתורי ניווט והתנתקות */}
+            <Button variant="ghost" size="icon" className="h-9 w-9 rounded-full" onClick={() => router.push('/settings')}>
+              <Settings className="h-5 w-5 text-gray-600" />
             </Button>
-            <Button variant="secondary" onClick={() => setShowHefsekhModal(true)}>
-              <Plus className="h-5 w-5 ml-2" />
-              הפסק טהרה
-            </Button>
-            <Button variant="ghost" size="icon" onClick={() => router.push('/settings')}>
-              <Settings className="h-5 w-5" />
-            </Button>
-            <Button variant="ghost" size="icon" onClick={handleSignOut}>
-              <LogOut className="h-5 w-5" />
+            <Button variant="ghost" size="icon" className="h-9 w-9 rounded-full" onClick={handleSignOut}>
+              <LogOut className="h-5 w-5 text-gray-600" />
             </Button>
           </div>
         </div>
       </header>
 
-      <main className="container mx-auto py-8">
+      {/* תוכן מרכזי */}
+      <main className="container mx-auto px-4 py-4 md:py-8">
         {history.events.length > 0 && (
-          <Card className="mb-6 bg-blue-50 border-blue-200">
-            <CardContent className="p-4">
+          <Card className="mb-4 md:mb-6 bg-blue-50 border-blue-200 shadow-sm">
+            <CardContent className="p-3 md:p-4">
               <div className="flex items-center gap-3">
-                <span className="text-2xl">ℹ️</span>
+                <span className="text-xl md:text-2xl">ℹ️</span>
                 <div>
-                  <p className="font-semibold">סטטוס נוכחי</p>
-                  <p className="text-sm text-muted-foreground">
+                  <p className="font-semibold text-sm md:text-base text-blue-900">סטטוס נוכחי</p>
+                  <p className="text-xs md:text-sm text-blue-700">
                     הווסת האחרונה: {history.events[0]?.date.toLocaleDateString('he-IL')}
                   </p>
                 </div>
@@ -233,26 +249,51 @@ export default function CalendarPage() {
         )}
 
         {history.events.length === 0 && (
-          <Card className="mb-6 bg-yellow-50 border-yellow-200">
+          <Card className="mb-4 md:mb-6 bg-yellow-50 border-yellow-200 shadow-sm">
             <CardContent className="p-4 text-center">
-              <p className="font-semibold mb-2">עדיין לא הוזנו וסתות</p>
-              <p className="text-sm text-muted-foreground mb-4">
+              <p className="font-semibold mb-1 text-sm md:text-base text-yellow-900">עדיין לא הוזנו וסתות</p>
+              <p className="text-xs md:text-sm text-yellow-700 mb-3">
                 כדי שהמערכת תוכל לחשב תאריכים, יש להזין לפחות וסת אחת
               </p>
-              <Button onClick={() => setShowAddModal(true)}>הוסף וסת ראשונה</Button>
+              <Button size="sm" onClick={() => setShowAddModal(true)}>הוסף וסת ראשונה</Button>
             </CardContent>
           </Card>
         )}
 
-        <CalendarGrid
-          currentDate={new Date()}
-          calculatedDates={calculatedDates}
-          onDateClick={(day) => {
-            console.log('Clicked:', day);
-          }}
-        />
+        {/* גריד לוח השנה - הקומפוננטה הפנימית שלו צריכה לתמוך ברספונסיביות */}
+        <div className="overflow-x-auto rounded-xl shadow-sm border bg-white p-2 md:p-4">
+          <CalendarGrid
+            currentDate={new Date()}
+            calculatedDates={calculatedDates}
+            onDateClick={(day) => {
+              console.log('Clicked:', day);
+            }}
+          />
+        </div>
       </main>
 
+      {/* 📱 כפתורי פעולה צפים (FAB) לנייד בלבד - ממוקמים בתחתית המסך בצד שמאל */}
+      <div className="md:hidden fixed bottom-6 left-6 z-40 flex flex-col gap-3">
+        {/* כפתור הפסק טהרה צף */}
+        <button
+          onClick={() => setShowHefsekhModal(true)}
+          className="flex items-center justify-center gap-2 bg-slate-100 hover:bg-slate-200 text-slate-800 font-medium px-4 py-3 rounded-full shadow-lg border border-slate-300 transition-transform active:scale-95 text-sm"
+        >
+          <Plus className="h-4 w-4" />
+          <span>הפסק טהרה</span>
+        </button>
+
+        {/* כפתור הוספת וסת צף ראשי */}
+        <button
+          onClick={() => setShowAddModal(true)}
+          className="flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white font-medium px-5 py-3.5 rounded-full shadow-xl transition-transform active:scale-95 text-sm"
+        >
+          <Plus className="h-5 w-5" />
+          <span>הוסף וסת</span>
+        </button>
+      </div>
+
+      {/* מודאלים קיימים */}
       <AddVesetModal
         isOpen={showAddModal}
         onClose={() => setShowAddModal(false)}
