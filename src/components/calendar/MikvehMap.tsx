@@ -46,9 +46,9 @@ interface Mikveh {
 }
 
 // Cast once at module level — avoids inline any casts that trigger missing-rule errors
-/* eslint-disable @typescript-eslint/no-explicit-any */
+// eslint-disable-next-line
 const supabaseAny = supabase as any;
-/* eslint-enable @typescript-eslint/no-explicit-any */
+// eslint-disable-next-line
 
 // 1. מאזין לתנועות המפה
 function MapEventsHandler({ onBoundsChange }: { onBoundsChange: (bounds: L.LatLngBounds) => void }) {
