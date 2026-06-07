@@ -5,7 +5,7 @@
 import Link from 'next/link';
 import { Button } from '@/components/ui/Button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
-import { ArrowRight, CheckCircle2, Heart, Shield, Code, Book } from 'lucide-react';
+import { ArrowRight, CheckCircle2, Heart, Shield, Code, Book, ExternalLink} from 'lucide-react';
 
 export default function AboutPage() {
   return (
@@ -68,7 +68,7 @@ export default function AboutPage() {
               />
               <FeatureCard
                 icon={<Book className="h-8 w-8 text-blue-600" />}
-                title="5 שיטות הלכתיות"
+                title="4 שיטות הלכתיות"
                 description="תמיכה בשיטות: רב עובדיה יוסף, בן איש חי, חזון איש, חב&quot;ד, ועוד תוספות"
               />
               <FeatureCard
@@ -133,17 +133,18 @@ export default function AboutPage() {
             </CardContent>
           </Card>
 
-          {/* קוד פתוח */}
+          
+          {/* קוד סגור אך מאושרה */}
           <Card>
             <CardHeader>
-              <CardTitle>שקיפות מלאה</CardTitle>
+              <CardTitle>דיוק והשגחה הלכתית</CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
               <p>
-                הקוד של המערכת נבנה בשקיפות מלאה, כך שניתן לבדוק ולאמת את החישובים ההלכתיים.
+                הלוגיקה והחישובים ההלכתיים של המערכת נכתבו בליווי צמוד ונבדקו בקפידה.
               </p>
               <p className="text-sm text-muted-foreground">
-                רבנים ופוסקים מוזמנים לבדוק את הלוגיקה ההלכתית ולוודא את דיוקה.
+                רבנים, פוסקים ומורי הוראה המעוניינים לבחון את הלוגיקה החישובית ולוודא את דיוקה ההלכתי מוזמנים ליצור עמנו קשר לקבלת הצגה מלאה של תהליכי החישוב.
               </p>
             </CardContent>
           </Card>
@@ -152,9 +153,20 @@ export default function AboutPage() {
           <Card className="text-center">
             <CardContent className="py-8">
               <h3 className="text-xl font-bold mb-4 font-hebrew">שאלות? הערות?</h3>
-              <p className="text-muted-foreground mb-6">
-                נשמח לשמוע ממך ולעזור בכל שאלה
+              <p className="text-muted-foreground mb-5 max-w-lg mx-auto text-sm">
+                נפתחו מקווה חדש או מרפאת בודקות באזורכן? גיליתן שעות פעילות שהשתנו? 
+                נשמח מאוד אם תעדכנו אותנו כדי שנשמור על המערכת מדויקת עבור כולן.
               </p>
+                {/* 🔗 הקישור המעוצב ל-Google Forms */}
+                <a 
+                  href="https://forms.gle/YtWQUtGk6brS7YTw8" // 👈 הדביקי כאן את הקישור לטופס שלך
+                  target="_blank" 
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1.5 text-base font-medium text-indigo-600 hover:text-indigo-800 underline underline-offset-4 decoration-2 transition-colors font-hebrew group"
+                >
+                  <span>לחצי כאן לפתיחת טופס דיווח ועדכון</span>
+                  <ExternalLink className="h-4 w-4 opacity-80 group-hover:translate-x-[-2px] transition-transform" />
+                </a>
               <div className="flex gap-4 justify-center">
                 <Link href="/login">
                   <Button size="lg">
@@ -173,10 +185,10 @@ export default function AboutPage() {
           {/* פסוק */}
           <div className="text-center py-8 border-t">
             <p className="text-xl font-hebrew text-muted-foreground italic">
-              "כִּי אֶל־אִישָׁהּ תְּשׁוּקָתֵךְ וְהוּא יִמְשָׁל־בָּךְ"
+             "רַבּוֹת בָּנוֹת עָשׂוּ חָיִל, וְאַתְּ עָלִית עַל כֻּלָּנָה."
             </p>
             <p className="text-sm text-muted-foreground mt-2">
-              בראשית ג׳, ט״ז
+             משלי     ל"א, כ"ט
             </p>
           </div>
         </div>

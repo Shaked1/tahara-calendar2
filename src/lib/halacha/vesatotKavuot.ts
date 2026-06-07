@@ -228,7 +228,7 @@ function buildFutureDates(
       case 'yom_30':
         nextDate = new Date(baseDate);
         nextDate.setDate(nextDate.getDate() + 29 * i);
-        reason   = `וסת קבועה – יום ל' (פעם ${i})`;
+        reason   = `וסת קבועה – יום 30 (פעם ${i})`;
         break;
 
       case 'haflagah':
