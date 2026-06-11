@@ -196,6 +196,7 @@ export default function CalendarPage() {
         };
     }
   }, [calculatedDates, loading]); // <--- כאן הורדנו את userLocation מרשימת התלויות
+  
   // פונקציית עזר לעיצוב כרטיס הסטטוס לפי סוגו
   const getCardStyles = (variant: string) => {
     switch (variant) {
