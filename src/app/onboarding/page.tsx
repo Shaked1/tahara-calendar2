@@ -1,10 +1,10 @@
 /**
  * דף Onboarding - קליטה ראשונית
+ * מעודכן ומותאם לעבודה עם ה-MethodSelector.tsx המקורי שלך (באמצעות onSelect)
+ * וכולל את הלוגיקה החדשה של שלב ההיסטוריה, המיקום והפסקי הטהרה.
  */
 
 'use client';
-// 💡 שימי לב: מחקנו מפה את ה-export const dynamic שגרם לבעיות ב-Build הקודם! 
-// הפיכת ה-Layout הכללי ל-force-dynamic תטפל בזה בצורה הרבה יותר נקייה.
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
@@ -15,7 +15,9 @@ import { HistoryInput } from '@/components/onboarding/HistoryInput';
 import { Input } from '@/components/ui/Input';
 import { supabase } from '@/lib/supabase/client';
 import { HalachicSettings } from '@/types';
-import { addVesetEvent } from '@/lib/supabase/vesatot';
+
+// ייבוא פונקציות השמירה מבסיס הנתונים
+import { addVesetEvent, addHefsekhTahara } from '@/lib/supabase/vesatot';
 
 type OnboardingStep = 'auth' | 'method' | 'history' | 'complete';
 
@@ -29,7 +31,7 @@ export default function OnboardingPage() {
   const [password, setPassword] = useState('');
   const [userId, setUserId] = useState<string | null>(null);
 
-  // Settings
+  // Settings - הסטייט המאוחד בדיוק כפי ש-MethodSelector המקורי שלך מצפה לקבל
   const [halachicSettings, setHalachicSettings] = useState<Partial<HalachicSettings>>({
     method: 'ovadia_yosef',
     orZarua: false,
@@ -37,10 +39,9 @@ export default function OnboardingPage() {
     maatLeat: false,
   });
 
-  const handleSignUp = async (e: React.FormEvent) => {
+  const handleAuthSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
-
     try {
       const { data, error } = await supabase.auth.signUp({
         email,
@@ -48,27 +49,7 @@ export default function OnboardingPage() {
       });
 
       if (error) throw error;
-
       if (data.user) {
-        // יצירת פרופיל
-        const { error: profileError } = await supabase
-          .from('users_profile')
-          .insert({
-            id: data.user.id,
-            email: data.user.email!,
-            halachic_method: 'ovadia_yosef',
-            or_zarua: false,
-            yom_31: false,
-            maat_leat: false,
-            latitude: 31.7683, // ירושלים ברירת מחדל
-            longitude: 35.2137,
-            timezone: 'Asia/Jerusalem',
-            location_name: 'ירושלים',
-            onboarding_completed: false,
-          } as any);
-
-        if (profileError) throw profileError;
-
         setUserId(data.user.id);
         setStep('method');
       }
@@ -79,23 +60,26 @@ export default function OnboardingPage() {
     }
   };
 
-  const handleMethodComplete = async () => {
+  const handleMethodSubmit = async () => {
     if (!userId) return;
-
     setLoading(true);
     try {
-      const { error } = await (supabase
-        .from('users_profile') as any)
-        .update({
-          halachic_method: halachicSettings.method,
-          or_zarua: halachicSettings.orZarua,
-          yom_31: halachicSettings.yom31,
-          maat_leat: halachicSettings.maatLeat,
-        })
-        .eq('id', userId);
+      // יצירת הפרופיל הראשוני עם הבחירות של המשתמשת מתוך ה-halachicSettings המאוחד
+      const { error } = await (supabase.from('users_profile') as any).insert({
+        id: userId,
+        email,
+        halachic_method: halachicSettings.method || 'ovadia_yosef',
+        or_zarua: halachicSettings.orZarua || false,
+        yom_31: halachicSettings.yom31 || false,
+        maat_leat: halachicSettings.maatLeat || false,
+        latitude: 31.7683, // ערך זמני, יתעדכן בסוף שלב ההיסטוריה והמיקום
+        longitude: 35.2137,
+        timezone: 'Asia/Jerusalem',
+        location_name: 'ירושלים',
+        onboarding_completed: false,
+      });
 
       if (error) throw error;
-
       setStep('history');
     } catch (err: any) {
       alert(err.message || 'שגיאה בשמירת הגדרות');
@@ -104,51 +88,75 @@ export default function OnboardingPage() {
     }
   };
 
-  const handleHistoryComplete = async (entries: any[] = []) => {
+  const handleHistoryComplete = async (
+    entries: any[] = [],
+    location?: { lat: number; lng: number; name: string }
+  ) => {
     if (!userId) return;
 
     setLoading(true);
     try {
-      // שמירת הוסתות רק אם המשתמשת אכן הכניסה נתונים
+      // ריצה ושמירה של אירועי הווסת והפסקי הטהרה המוצמדים אליהם
       if (entries && entries.length > 0) {
         for (const entry of entries) {
-          await addVesetEvent(
+          // 1. שמירת אירוע הווסת
+          const vesetResult = await addVesetEvent(
             userId,
             new Date(entry.date),
             entry.time,
             entry.onah
           );
+
+          // 2. שמירת הפסק הטהרה מוצמד לווסת (במידה והוזן)
+          if (entry.hefsekh && vesetResult?.id) {
+            await addHefsekhTahara(
+              userId,
+              vesetResult.id,
+              new Date(entry.hefsekh.date),
+              entry.hefsekh.time,
+              entry.hefsekh.onah
+            );
+          }
         }
       }
 
-      // סימון onboarding כהושלם (קורה בכל מקרה, גם ללא וסתות)
-      const { error } = await (supabase
+      // חילוץ המיקום האמיתי שנבחר מקומפוננטת ה-HistoryInput או שימוש בברירת מחדל
+      const finalLat = location ? location.lat : 31.7683;
+      const finalLng = location ? location.lng : 35.2137;
+      const finalName = location ? location.name : 'ירושלים';
+      const finalTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+
+      // עדכון פרופיל המשתמשת עם המיקום הסופי וסימון סיום ה-Onboarding
+      const { error: profileError } = await (supabase
         .from('users_profile') as any)
-        .update({ onboarding_completed: true })
+        .update({ 
+          onboarding_completed: true,
+          latitude: finalLat,
+          longitude: finalLng,
+          location_name: finalName,
+          timezone: finalTz
+        })
         .eq('id', userId);
 
-      if (error) throw error;
+      if (profileError) throw profileError;
 
       setStep('complete');
-      
-      // מעבר ללוח שנה אחרי 2 שניות
       setTimeout(() => {
         router.push('/calendar');
       }, 2000);
+
     } catch (err: any) {
-      alert(err.message || 'שגיאה בשמירת נתונים');
+      alert(err.message || 'שגיאה בשמירת נתוני היסטוריה ומיקום');
     } finally {
       setLoading(false);
     }
   };
 
-return (
-    /* במחשב: py-8 (הרווח המקורי מהגג). במובייל: min-h-[100dvh] ורווח קטן py-4 שלא יקטע */
+  return (
     <div className="min-h-[100dvh] md:min-h-screen bg-gradient-to-b from-background to-secondary/20 py-4 md:py-8 px-4 flex flex-col justify-start md:justify-center font-sans antialiased">
-      {/* במחשב: max-w-3xl המקורי שלך. במובייל: מתכווץ אוטומטית ל-max-w-xl כדי להתאים למסך */}
       <div className="w-full max-w-xl md:max-w-3xl mx-auto flex flex-col gap-4 md:gap-8">
         
-        {/* Progress Bar: במחשב הוא מרווח כמו קודם, במובייל הוא מתנקה מסביב כדי לחסוך מקום */}
+        {/* סרגל השלבים המקורי והמעוצב שלך (עיגולים, מספרים וקווים מחברים) */}
         <div className="w-full p-3 md:p-0 md:bg-transparent md:border-none md:shadow-none bg-background/60 backdrop-blur-sm rounded-xl border border-border/40 shadow-sm mb-0 md:mb-8">
           <div className="flex items-center justify-center gap-2">
             {['הרשמה', 'בחירת שיטה', 'היסטוריה', 'סיום'].map((label, index) => {
@@ -168,24 +176,28 @@ return (
                     >
                       {index + 1}
                     </div>
-                    {/* במובייל מציג רק את השלב הנוכחי כדי שלא יישבר, במחשב (md) מציג תמיד את הכל כמו בעיצוב הישן */}
                     <span className={`text-[11px] sm:text-xs md:text-sm mr-2 ${
                       isActive ? 'font-medium' : 'text-muted-foreground'
                     } ${isCurrent ? 'block' : 'hidden md:inline-block'}`}>
                       {label}
                     </span>
                   </div>
-                  {index < 3 && <div className={`w-8 sm:w-12 h-0.5 mx-1 sm:mx-2 ${index < stepIndex ? 'bg-primary' : 'bg-gray-200'}`} />}
+                  {index < 3 && (
+                    <div className={`w-8 sm:w-12 h-0.5 mx-1 sm:mx-2 ${
+                      index < stepIndex ? 'bg-primary' : 'bg-gray-200'
+                    }`} />
+                  )}
                 </div>
               );
             })}
           </div>
         </div>
 
-        {/* Content Card */}
+        {/* כרטיס התוכן המרכזי */}
         <Card className="md:border md:shadow-sm border-border/50">
-          {/* פדינג: במחשב p-8 בדיוק כמו בעיצוב הישן. במובייל (מסכים קטנים מ-md) הוא יורד ל-p-5 כדי למנוע את קטיעת המסך */}
           <CardContent className="p-5 md:p-8">
+            
+            {/* שלב 1: רישום משתמשת */}
             {step === 'auth' && (
               <div className="space-y-6">
                 <div className="text-center space-y-2">
@@ -195,8 +207,8 @@ return (
                   </p>
                 </div>
 
-                <form onSubmit={handleSignUp} className="space-y-4">
-                  <div>
+                <form onSubmit={handleAuthSubmit} className="space-y-4">
+                  <div className="text-right" dir="rtl">
                     <label className="block text-sm font-medium mb-2">אימייל</label>
                     <Input
                       type="email"
@@ -207,7 +219,7 @@ return (
                     />
                   </div>
 
-                  <div>
+                  <div className="text-right" dir="rtl">
                     <label className="block text-sm font-medium mb-2">סיסמה</label>
                     <Input
                       type="password"
@@ -226,6 +238,7 @@ return (
               </div>
             )}
 
+            {/* שלב 2: הגדרות הלכתיות - מותאם מחדש ל-Props המקוריים של MethodSelector */}
             {step === 'method' && (
               <div className="space-y-6">
                 <div className="text-center space-y-2">
@@ -235,7 +248,6 @@ return (
                   </p>
                 </div>
 
-                {/* במובייל מגביל גובה עם גלילה פנימית כדי שהכפתור לא ייחתך, במחשב נפתח רגיל */}
                 <div className="max-h-[50vh] md:max-h-none overflow-y-auto md:overflow-visible px-1">
                   <MethodSelector
                     onSelect={setHalachicSettings}
@@ -243,22 +255,22 @@ return (
                   />
                 </div>
 
-                <Button onClick={handleMethodComplete} className="w-full" disabled={loading}>
-                  {loading ? 'שומר...' : 'המשך'}
+                <Button onClick={handleMethodSubmit} className="w-full" disabled={loading}>
+                  {loading ? 'שומר הגדרות...' : 'המשך'}
                 </Button>
               </div>
             )}
 
+            {/* שלב 3: הזנת היסטוריה ומיקום */}
             {step === 'history' && (
               <div className="space-y-6">
                 <div className="text-center space-y-2">
-                  <h2 className="text-2xl font-bold font-hebrew">הזנת היסטוריה</h2>
+                  <h2 className="text-2xl font-bold font-hebrew">הזנת היסטוריה ומיקום</h2>
                   <p className="text-muted-foreground">
                     הזיני את הוסתות האחרונות שלך לחישובים מדויקים (אופציונלי)
                   </p>
                 </div>
 
-                {/* במובייל מגביל גובה עם גלילה פנימית כדי שהכפתור לא ייחתך, במחשב נפתח רגיל */}
                 <div className="max-h-[50vh] md:max-h-none overflow-y-auto md:overflow-visible px-1">
                   <HistoryInput onComplete={handleHistoryComplete} />
                 </div>
@@ -266,7 +278,7 @@ return (
                 <div className="pt-2 text-center">
                   <button
                     type="button"
-                    onClick={() => handleHistoryComplete([])}
+                    onClick={() => handleHistoryComplete([], undefined)}
                     disabled={loading}
                     className="text-sm text-muted-foreground hover:text-primary transition-colors underline underline-offset-4"
                   >
@@ -276,15 +288,17 @@ return (
               </div>
             )}
 
+            {/* שלב 4: סיום בהצלחה */}
             {step === 'complete' && (
               <div className="text-center space-y-6 py-12">
-                <div className="text-6xl">✅</div>
+                <div className="text-6xl animate-bounce">✅</div>
                 <h2 className="text-3xl font-bold font-hebrew">כל הכבוד!</h2>
                 <p className="text-lg text-muted-foreground">
-                  החשבון שלך מוכן. מעביר אותך ללוח השנה...
+                  החשבון והגדרות הטהרה שלך מוכנים. מעביר אותך ללוח השנה...
                 </p>
               </div>
             )}
+
           </CardContent>
         </Card>
       </div>

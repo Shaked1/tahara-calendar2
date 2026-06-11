@@ -44,21 +44,62 @@ export function useNotifications({
     }
   }, []);
 
-  // ── בקשת הרשאת Push ───────────────────────────
+  // ── בקשת הרשאת Push ושמירת ה-Subscription ──
   const askPermission = useCallback(async () => {
-    const granted = await requestPushPermission();
-    setPushGranted(granted);
-    return granted;
-  }, []);
+    try {
+      const granted = await requestPushPermission();
+      setPushGranted(granted);
+      
+      if (granted && userId && 'serviceWorker' in navigator) {
+        // משיגים את ה-registration של ה-Service Worker כשהוא מוכן
+        const registration = await navigator.serviceWorker.ready;
+        
+        // משיגים את ה-subscription הקיים או יוצרים אחד במידת הצורך
+        // (מומלץ להשתמש ב-subscribe אם גוגל/דפדפן דורש חידוש, אך פה נשען על המנגנון הקיים)
+        let subscription = await registration.pushManager.getSubscription();
+        
+        // אם אין subscription פעיל, ננסה לרשום אותו (דורש VAPID Key בדרך כלל בתוך ה-options)
+        if (!subscription) {
+          // במידה ויש לך VAPID Public Key, מומלץ להפעיל כאן את הרישום בפועל:
+          // subscription = await registration.pushManager.subscribe({
+          //   userVisibleOnly: true,
+          //   applicationServerKey: urlBase64ToUint8Array(process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY)
+          // });
+        }
 
-  // ── תזמון כל ההתראות ─────────────────────────
+        if (subscription) {
+          // שומרים או מעדכנים (Upsert) בטבלה החדשה
+          const { error } = await supabase
+            .from('user_subscriptions')
+            .upsert({
+              user_id: userId,
+              subscription: subscription.toJSON(),
+              updated_at: new Date().toISOString()
+            }, { onConflict: 'user_id' });
+
+          if (error) {
+            console.error('Error saving subscription to Supabase:', error);
+          } else {
+            console.log('Subscription successfully saved to Supabase.');
+          }
+        }
+      }
+      
+      return granted;
+    } catch (error) {
+      console.error('Error during askPermission flow:', error);
+      return false;
+    }
+  }, [userId]);
+
+  // ── תזמון התראות במערכת (מייל + דאטהבייס) ──
   const scheduleNotifications = useCallback(async () => {
     if (!userId || !settings || !location || history.events.length === 0) return;
 
     setLoading(true);
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      const userEmail = user?.email ?? '';
+      const user = await supabase.auth.getUser();
+      const userEmail = user.data.user?.email ?? '';
 
       const calculator = new TaharaCalculator(settings, location);
       const result     = calculator.calculateAll(history);
@@ -98,7 +139,13 @@ export function useNotifications({
     if (userId && settings && location && history.events.length > 0) {
       scheduleNotifications();
     }
-  }, [scheduleNotifications, userId, settings, location, history.events.length, history.hefsekhTaharot.length]);
+  }, [scheduleNotifications, userId, settings, location, history.events.length]);
 
-  return { pushGranted, scheduled, loading, askPermission, scheduleNotifications };
+  return {
+    pushGranted,
+    scheduled,
+    loading,
+    askPermission,
+    scheduleNotifications,
+  };
 }

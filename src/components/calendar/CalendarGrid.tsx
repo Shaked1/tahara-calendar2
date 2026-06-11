@@ -1,5 +1,6 @@
 /**
  * קומפוננטת CalendarGrid - רשת לוח שנה מלאה
+ * מעביר prevNightDate לכל יום כדי לאפשר תצוגת לילה-לפני-יום
  */
 
 'use client';
@@ -9,7 +10,7 @@ import { CalendarDay as CalendarDayType, CalendarMonth } from '@/types';
 import { CalendarDay, CalendarLegend } from './CalendarDay';
 import { Button } from '@/components/ui/Button';
 import { ChevronRight, ChevronLeft } from 'lucide-react';
-import { 
+import {
   formatHebrewDateShort,
   getHebrewMonthName,
   getHebrewYear,
@@ -24,6 +25,11 @@ interface CalendarGridProps {
   onMonthChange?: (date: Date) => void;
 }
 
+/** מחזיר מפתח תאריך YYYY-MM-DD */
+function dateKey(date: Date): string {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+}
+
 export function CalendarGrid({
   currentDate,
   calculatedDates,
@@ -32,31 +38,27 @@ export function CalendarGrid({
 }: CalendarGridProps) {
   const [viewDate, setViewDate] = useState(currentDate);
 
-  // בניית ימי החודש
   const monthDays = useMemo(() => {
     const start = startOfMonth(viewDate);
     const end = endOfMonth(viewDate);
     const days: CalendarDayType[] = [];
 
-    // התחלה מיום ראשון של השבוע הראשון
     const firstDayOfWeek = start.getDay();
     const startDate = new Date(start);
     startDate.setDate(startDate.getDate() - firstDayOfWeek);
 
-    // 42 ימים (6 שבועות)
     for (let i = 0; i < 42; i++) {
       const currentDay = new Date(startDate);
       currentDay.setDate(currentDay.getDate() + i);
 
-      const isCurrentMonth = 
+      const isCurrentMonth =
         currentDay.getMonth() === viewDate.getMonth() &&
         currentDay.getFullYear() === viewDate.getFullYear();
 
-      const isToday = 
-        currentDay.toDateString() === new Date().toDateString();
+      const isToday = currentDay.toDateString() === new Date().toDateString();
 
-     const dateKey = `${currentDay.getFullYear()}-${String(currentDay.getMonth() + 1).padStart(2, '0')}-${String(currentDay.getDate()).padStart(2, '0')}`;
-      const calculatedDate = calculatedDates?.get(dateKey);
+      const key = dateKey(currentDay);
+      const calculatedDate = calculatedDates?.get(key);
 
       days.push({
         gregorianDate: currentDay,
@@ -91,27 +93,21 @@ export function CalendarGrid({
     onMonthChange?.(today);
   };
 
-  // כותרת החודש
   const monthTitle = useMemo(() => {
-    const gregorianMonth = viewDate.toLocaleDateString('he-IL', { 
-      month: 'long',
-      year: 'numeric',
-    });
+    const gregorianMonth = viewDate.toLocaleDateString('he-IL', { month: 'long', year: 'numeric' });
     const hebrewMonth = getHebrewMonthName(viewDate);
-    const hebrewYear = getHebrewYear(viewDate);
-
+    const hebrewYear  = getHebrewYear(viewDate);
     return `${gregorianMonth} | ${hebrewMonth} ${hebrewYear}`;
   }, [viewDate]);
 
-return (
+  return (
     <div className="w-full max-w-6xl mx-auto p-2 md:p-4">
-      {/* 📱 כותרת + ניווט - מותאם רספונסיבית למובייל ומחשב */}
+      {/* כותרת + ניווט */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6 w-full">
-        
-        {/* כפתור "היום" - בנייד יתפוס שורה עליונה מלאה, במחשב יחזור לצד ימין */}
+
         <div className="w-full sm:w-auto flex justify-center sm:justify-start order-1">
-          <Button 
-            variant="outline" 
+          <Button
+            variant="outline"
             onClick={handleToday}
             className="w-full sm:w-auto px-6 shadow-sm font-medium"
           >
@@ -119,7 +115,6 @@ return (
           </Button>
         </div>
 
-        {/* החצים והכותרת - יתמרכזו בצורה מושלמת בכל מסך */}
         <div className="flex items-center justify-between sm:justify-center gap-2 md:gap-4 order-2 w-full sm:w-auto">
           <Button
             variant="ghost"
@@ -131,7 +126,6 @@ return (
             <ChevronLeft className="h-5 w-5" />
           </Button>
 
-          {/* מיקוד רוחב רספונסיבי לכותרת למניעת חיתוך טקסט */}
           <h2 className="text-lg md:text-2xl font-bold font-hebrew text-center flex-1 sm:flex-none min-w-[200px] md:min-w-[300px] text-slate-900 px-1">
             {monthTitle}
           </h2>
@@ -147,8 +141,7 @@ return (
           </Button>
         </div>
 
-        {/* אלמנט מאזן למחשב בלבד - נעלם בנייד */}
-        <div className="hidden sm:block w-20 order-3"></div>
+        <div className="hidden sm:block w-20 order-3" />
       </div>
 
       {/* מקרא */}
@@ -159,10 +152,7 @@ return (
       {/* כותרות ימי השבוע */}
       <div className="grid grid-cols-7 gap-1 md:gap-2 mb-2">
         {['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי', 'שישי', 'שבת'].map((day) => (
-          <div
-            key={day}
-            className="text-center font-bold text-xs md:text-sm text-muted-foreground py-1 md:py-2"
-          >
+          <div key={day} className="text-center font-bold text-xs md:text-sm text-muted-foreground py-1 md:py-2">
             {day}
           </div>
         ))}
@@ -170,13 +160,40 @@ return (
 
       {/* רשת הימים */}
       <div className="grid grid-cols-7 gap-1 md:gap-2">
-        {monthDays.map((day, index) => (
-          <CalendarDay
-            key={index}
-            day={day}
-            onClick={onDateClick}
-          />
-        ))}
+        {monthDays.map((day, index) => {
+          // מחפש את נתוני הלילה של היום הקודם
+          // לילה של יום D מוצגת בתא של יום D+1
+          const prevDate = new Date(day.gregorianDate);
+          prevDate.setDate(prevDate.getDate() - 1);
+          const prevKey = dateKey(prevDate);
+          const prevDayData = calculatedDates?.get(prevKey);
+
+          // prevNightDate = נתוני הלילה מה-CD של יום קודם
+          // אנחנו בודקים אם יש activeOnot שכוללות 'night' ביום הקודם
+          let prevNightDate = undefined;
+          if (prevDayData && (
+            prevDayData.status === 'prohibited' ||
+            prevDayData.status === 'clean_day' ||
+            prevDayData.status === 'mikvah_night'
+          )) {
+            // מחלץ רק את נתוני הלילה
+            const activeOnot: string[] = prevDayData.activeOnot ?? [];
+            const hasNight = activeOnot.length === 0 || activeOnot.includes('night');
+
+            if (hasNight || prevDayData.status === 'clean_day' || prevDayData.status === 'mikvah_night') {
+              prevNightDate = prevDayData;
+            }
+          }
+
+          return (
+            <CalendarDay
+              key={index}
+              day={day}
+              prevNightDate={prevNightDate}
+              onClick={onDateClick}
+            />
+          );
+        })}
       </div>
     </div>
   );

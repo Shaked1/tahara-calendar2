@@ -1,6 +1,6 @@
 /**
- * קומפוננטת HistoryInput - הזנת היסטוריית 6 חודשים
- * העונה (יום/לילה) מחושבת אוטומטית לפי השעה והמיקום
+ * קומפוננטת HistoryInput - הזנת היסטוריית 6 חודשים מבוססת KosherZmanim
+ * כולל: חיפוש מיקום בינלאומי חופשי, הפסק טהרה לכל וסת, וחישוב עונה אסטרונומי תקני
  */
 
 'use client';
@@ -9,140 +9,190 @@ import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Card, CardContent } from '@/components/ui/Card';
-import { Plus, Trash2, Sun, Moon, Clock } from 'lucide-react';
-import { OnahType } from '@/types';
+import { Plus, Trash2, Sun, Moon, Clock, MapPin, Search, Loader2 } from 'lucide-react';
+import { OnahType, UserLocation } from '@/types';
+
+// 🌟 שימוש ישיר בפונקציות המצוינות הקיימות שלך בפרויקט!
+import { getZmanimForDate, formatTime } from '@/lib/zmanim/index';
+import { determineOnahFromDateAndTime } from '@/lib/halacha/onot';
 
 // ──────────────────────────────────────────────
-// חישוב עונה לפי שעה ומיקום (ללא import חיצוני)
+// טיפוסים וממשקים
 // ──────────────────────────────────────────────
 
-/**
- * חישוב זריחה ושקיעה מקורב לפי קואורדינטות ותאריך.
- * משתמש באלגוריתם NOAA פשוט — מדויק בטווח ±10 דקות.
- */
-function calcSunTimes(date: Date, lat: number, lng: number): { sunrise: Date; sunset: Date } {
-  const rad = Math.PI / 180;
-  const dayOfYear = Math.floor(
-    (date.getTime() - new Date(date.getFullYear(), 0, 0).getTime()) / 86400000
-  );
-
-  const B     = (360 / 365) * (dayOfYear - 81) * rad;
-  const eot   = 9.87 * Math.sin(2 * B) - 7.53 * Math.cos(B) - 1.5 * Math.sin(B); // דקות
-  const solarNoonLocal = 12 - lng / 15 - eot / 60; // שעות UTC
-
-  const decl   = 23.45 * Math.sin(B) * rad;
-  const latRad = lat * rad;
-  const cosH   = -Math.tan(latRad) * Math.tan(decl);
-
-  // אם קוסינוס מחוץ לטווח → שמש לא שוקעת / לא זורחת (קוטב)
-  const H = Math.abs(cosH) > 1 ? 6 : Math.acos(cosH) / rad;
-
-  const sunriseUtc = solarNoonLocal - H / 15;
-  const sunsetUtc  = solarNoonLocal + H / 15;
-
-  const toLocal = (utcHours: number) => {
-    const d = new Date(date);
-    d.setUTCHours(0, 0, 0, 0);
-    d.setTime(d.getTime() + utcHours * 3600 * 1000);
-    return d;
-  };
-
-  return { sunrise: toLocal(sunriseUtc), sunset: toLocal(sunsetUtc) };
+interface HefsekhEntry {
+  date: string;
+  time: string;
+  onah: OnahType;
 }
 
-/**
- * קובע עונה לפי תאריך, שעה ומיקום.
- * ברירת מחדל: ירושלים (31.77°N, 35.21°E)
- */
-function computeOnah(
-  dateStr: string,
-  timeStr: string,
-  lat = 31.7683,
-  lng = 35.2137
-): OnahType {
-  if (!dateStr || !timeStr) return 'day';
-
-  const [h, m]   = timeStr.split(':').map(Number);
-  const eventDate = new Date(dateStr);
-  eventDate.setHours(h, m, 0, 0);
-
-  const { sunrise, sunset } = calcSunTimes(eventDate, lat, lng);
-
-  return eventDate >= sunrise && eventDate < sunset ? 'day' : 'night';
-}
-
-// ──────────────────────────────────────────────
-// טיפוסים
-// ──────────────────────────────────────────────
-
-interface VesetEntry {
+interface HistoryEntry {
   id: string;
   date: string;
   time: string;
-  onah: OnahType; // מחושב אוטומטית
+  onah: OnahType;
+  isHefsekhOpen?: boolean;
+  hefsekh?: HefsekhEntry;
 }
 
 interface HistoryInputProps {
-  onComplete: (entries: VesetEntry[]) => void;
-  /** קואורדינטות המשתמשת אם כבר ידועות (אופציונלי) */
-  lat?: number;
-  lng?: number;
+  onComplete: (
+    entries: Array<{ id: string; date: string; time: string; onah: OnahType; hefsekh?: HefsekhEntry }>,
+    location: { lat: number; lng: number; name: string }
+  ) => void;
+  initialLat?: number;
+  initialLng?: number;
+  initialLocationName?: string;
 }
 
-// ──────────────────────────────────────────────
-// עזרים לתצוגה
-// ──────────────────────────────────────────────
+export function HistoryInput({ 
+  onComplete, 
+  initialLat = 31.7683, 
+  initialLng = 35.2137, 
+  initialLocationName = 'ירושלים' 
+}: HistoryInputProps) {
+  
+  // מיקומי ברירת מחדל מהירים
+  const presetLocations = [
+    { name: 'ירושלים', lat: 31.7683, lng: 35.2137 },
+    { name: 'תל אביב', lat: 32.0853, lng: 34.7818 },
+    { name: 'בני ברק', lat: 32.0833, lng: 34.8333 },
+    { name: 'חיפה', lat: 32.8191, lng: 34.9983 },
+    { name: 'ניו יורק', lat: 40.7128, lng: -74.0060 },
+    { name: 'לונדון', lat: 51.5074, lng: -0.1278 }
+  ];
 
-function OnahBadge({ onah }: { onah: OnahType }) {
-  return onah === 'day' ? (
-    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 text-xs font-semibold border border-amber-200">
-      <Sun className="w-3 h-3" />
-      עונת יום
-    </span>
-  ) : (
-    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-800 text-xs font-semibold border border-indigo-200">
-      <Moon className="w-3 h-3" />
-      עונת לילה
-    </span>
-  );
-}
+  // States למיקום
+  const [lat, setLat] = useState<number>(initialLat);
+  const [lng, setLng] = useState<number>(initialLng);
+  const [locationName, setLocationName] = useState<string>(initialLocationName);
+  
+  // States למנגנון החיפוש החופשי
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<any[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
+  const [showDropdown, setShowDropdown] = useState(false);
 
-// ──────────────────────────────────────────────
-// קומפוננטה ראשית
-// ──────────────────────────────────────────────
+  // רשימת הוסתות
+  const [entries, setEntries] = useState<HistoryEntry[]>([
+    { id: '1', date: '', time: '08:00', onah: 'day' }
+  ]);
 
-export function HistoryInput({ onComplete, lat, lng }: HistoryInputProps) {
-  const [entries, setEntries] = useState<VesetEntry[]>([]);
+  // בניית אובייקט מיקום זמני שמתאים לטיפוס ה-UserLocation שלך בפרויקט
+  const getCurrentLocationObject = (): UserLocation => ({
+    latitude: lat,
+    longitude: lng,
+    locationName: locationName,
+    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone // מזהה אוטומטית את אזור הזמן של הדפדפן/מכשיר
+  });
 
-  // ── הוספת וסת חדשה ──
+  // פונקציית החיפוש העולמית (Geocoding חופשי מבוסס Nominatim)
+  const handleSearchLocation = async (query: string) => {
+    if (!query.trim()) return;
+    setIsSearching(true);
+    setShowDropdown(true);
+    try {
+      const response = await fetch(
+        `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&accept-language=he,en&limit=5`
+      );
+      const data = await response.json();
+      setSearchResults(data);
+    } catch (err) {
+      console.error('Error fetching location:', err);
+    } finally {
+      setIsSearching(false);
+    }
+  };
+
+  const selectLocation = (name: string, latitude: number, longitude: number) => {
+    setLat(latitude);
+    setLng(longitude);
+    setLocationName(name);
+    setSearchQuery('');
+    setShowDropdown(false);
+  };
+
+  // פונקציית עזר לחישוב עונה מבוססת הקוד שלך ב-onot.ts
+  const calculateOnah = (dateStr: string, timeStr: string): OnahType => {
+    if (!dateStr) return 'day';
+    const loc = getCurrentLocationObject();
+    // הפונקציה הקיימת שלך מקבלת אובייקט Date ואת ה-Time כמחרוזת
+    return determineOnahFromDateAndTime(new Date(dateStr), timeStr || '08:00', loc);
+  };
+
+  // עדכון אוטומטי של העונות בכל פעם שהמיקום, התאריך או השעה משתנים
+  useEffect(() => {
+    setEntries(prev => prev.map(entry => {
+      if (!entry.date) return entry;
+      
+      const computedOnah = calculateOnah(entry.date, entry.time);
+      let updatedHefsekh = entry.hefsekh;
+      
+      if (entry.hefsekh?.date) {
+        updatedHefsekh = {
+          ...entry.hefsekh,
+          onah: calculateOnah(entry.hefsekh.date, entry.hefsekh.time)
+        };
+      }
+
+      return { ...entry, onah: computedOnah, hefsekh: updatedHefsekh };
+    }));
+  }, [lat, lng]);
+
   const addEntry = () => {
-    const today = new Date().toISOString().split('T')[0];
-    const defaultTime = '08:00';
-    setEntries(prev => [
-      ...prev,
-      {
-        id: Date.now().toString(),
-        date: today,
-        time: defaultTime,
-        onah: computeOnah(today, defaultTime, lat, lng),
-      },
-    ]);
+    if (entries.length >= 6) return;
+    const nextId = (Math.max(...entries.map(e => parseInt(e.id) || 0)) + 1).toString();
+    setEntries([...entries, { id: nextId, date: '', time: '08:00', onah: 'day' }]);
   };
 
-  // ── עדכון שדה + חישוב אוטומטי של עונה ──
-  const updateEntry = (id: string, updates: Partial<Pick<VesetEntry, 'date' | 'time'>>) => {
-    setEntries(prev =>
-      prev.map(e => {
-        if (e.id !== id) return e;
-        const next = { ...e, ...updates };
-        // מחשבים מחדש את העונה בכל שינוי של תאריך או שעה
-        next.onah = computeOnah(next.date, next.time, lat, lng);
-        return next;
-      })
-    );
+  const removeEntry = (id: string) => {
+    setEntries(entries.filter(e => e.id !== id));
   };
 
-  const removeEntry = (id: string) => setEntries(prev => prev.filter(e => e.id !== id));
+  const updateEntry = (id: string, fields: Partial<HistoryEntry>) => {
+    setEntries(entries.map(e => {
+      if (e.id !== id) return e;
+      const updated = { ...e, ...fields };
+      
+      if (updated.date) {
+        updated.onah = calculateOnah(updated.date, updated.time);
+      }
+      return updated;
+    }));
+  };
+
+  const toggleHefsekh = (id: string) => {
+    setEntries(entries.map(e => {
+      if (e.id !== id) return e;
+      const isOpen = !e.isHefsekhOpen;
+      
+      let defaultHefsekh = e.hefsekh;
+      if (isOpen && !e.hefsekh && e.date) {
+        const d = new Date(e.date);
+        d.setDate(d.getDate() + 4); 
+        const hDate = d.toISOString().split('T')[0];
+        defaultHefsekh = {
+          date: hDate,
+          time: '18:00',
+          onah: calculateOnah(hDate, '18:00')
+        };
+      }
+      
+      return { ...e, isHefsekhOpen: isOpen, hefsekh: defaultHefsekh };
+    }));
+  };
+
+  const updateHefsekh = (id: string, fields: Partial<HefsekhEntry>) => {
+    setEntries(entries.map(e => {
+      if (e.id !== id || !e.hefsekh) return e;
+      const updatedHefsekh = { ...e.hefsekh, ...fields };
+      
+      if (updatedHefsekh.date) {
+        updatedHefsekh.onah = calculateOnah(updatedHefsekh.date, updatedHefsekh.time);
+      }
+      return { ...e, hefsekh: updatedHefsekh };
+    }));
+  };
 
   const handleSubmit = () => {
     const valid = entries.filter(e => e.date && e.time);
@@ -150,142 +200,276 @@ export function HistoryInput({ onComplete, lat, lng }: HistoryInputProps) {
       alert('נא להזין לפחות וסת אחת עם תאריך ושעה');
       return;
     }
-    onComplete(valid);
+    
+    onComplete(
+      valid.map(e => ({
+        id: e.id,
+        date: e.date,
+        time: e.time,
+        onah: e.onah,
+        hefsekh: e.hefsekh
+      })),
+      { lat, lng, name: locationName }
+    );
   };
 
-  const hasValidEntries = entries.some(e => e.date && e.time);
-
   return (
-    <div className="space-y-6">
-      {/* כותרת */}
-      <div>
-        <h3 className="text-lg font-semibold mb-1">הזנת היסטוריית וסתות</h3>
-        <p className="text-sm text-muted-foreground">
-          הזיני תאריך ושעה — העונה (יום/לילה) תחושב <strong>אוטומטית</strong> לפי זמני
-          הזריחה והשקיעה במיקומך.
-        </p>
-      </div>
+    <div className="space-y-6 max-w-2xl mx-auto text-right" dir="rtl">
+      
+      {/* ── מנגנון בחירת מיקום עולמי חכם ── */}
+      <Card className="border-primary/20 shadow-sm bg-primary/5">
+        <CardContent className="p-4 md:p-6 space-y-4">
+          <div className="flex items-center gap-2 text-primary font-medium">
+            <MapPin className="h-5 w-5" />
+            <h3 className="text-lg font-semibold">הגדרת מיקום בעולם לחישוב זמני שקיעה וזריחה</h3>
+          </div>
+          
+          <p className="text-sm text-muted-foreground">
+            נא לבחור את המיקום שלך. המערכת תחשב לפיו באופן אוטומטי את עונות היום והלילה המדויקות באמצעות KosherZmanim.
+          </p>
 
-      {/* הסבר קצר */}
-      <Card className="bg-amber-50 border-amber-200">
-        <CardContent className="p-3">
-          <div className="flex gap-2 items-start text-sm">
-            <Clock className="w-4 h-4 text-amber-600 mt-0.5 shrink-0" />
-            <div className="text-amber-900">
-              <span className="font-semibold">כיצד מחושבת העונה?</span>
-              <br />
-              מזריחה עד שקיעה = <OnahBadge onah="day" />, משקיעה עד זריחה = <OnahBadge onah="night" />
+          {/* שורת חיפוש חופשי בעולם */}
+          <div className="relative">
+            <div className="flex gap-2">
+              <div className="relative flex-1">
+                <Search className="absolute right-3 top-3 h-4 w-4 text-muted-foreground" />
+                <Input
+                  type="text"
+                  placeholder="הקלידי כל עיר או מדינה בעולם... (לדוגמה: תל אביב, פריז, ניו יורק)"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && handleSearchLocation(searchQuery)}
+                  className="pr-9"
+                />
+              </div>
+              <Button type="button" onClick={() => handleSearchLocation(searchQuery)} disabled={isSearching}>
+                {isSearching ? <Loader2 className="h-4 w-4 animate-spin" /> : 'חפשי'}
+              </Button>
+            </div>
+
+            {/* דרופדאון תוצאות חיפוש */}
+            {showDropdown && (searchQuery || isSearching || searchResults.length > 0) && (
+              <div className="absolute z-50 w-full mt-1 bg-background border border-border rounded-md shadow-lg max-h-60 overflow-y-auto text-sm">
+                {isSearching && <div className="p-3 text-center text-muted-foreground">מחפש מיקום בעולם...</div>}
+                {!isSearching && searchResults.length === 0 && (
+                  <div className="p-3 text-center text-muted-foreground">לא נמצאו תוצאות. נסי לאיית שוב.</div>
+                )}
+                {!isSearching && searchResults.map((res: any) => {
+                  const shortName = res.display_name.split(',').slice(0, 3).join(',');
+                  return (
+                    <button
+                      key={res.place_id}
+                      type="button"
+                      onClick={() => selectLocation(shortName, parseFloat(res.lat), parseFloat(res.lon))}
+                      className="w-full text-right p-3 hover:bg-muted border-b border-border/40 last:border-0 block transition-colors"
+                    >
+                      {res.display_name}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          {/* כפתורי בחירה מהירה */}
+          <div className="flex flex-wrap gap-1.5 pt-1">
+            <span className="text-xs text-muted-foreground w-full mb-1">בחירה מהירה:</span>
+            {presetLocations.map((loc) => (
+              <button
+                key={loc.name}
+                type="button"
+                onClick={() => selectLocation(loc.name, loc.lat, loc.lng)}
+                className={`text-xs px-2.5 py-1.5 rounded-full border transition-all ${
+                  locationName.includes(loc.name)
+                    ? 'bg-primary text-primary-foreground border-primary font-medium'
+                    : 'bg-background hover:bg-muted text-muted-foreground'
+                }`}
+              >
+                {loc.name}
+              </button>
+            ))}
+          </div>
+
+          {/* תצוגת המיקום והקואורדינטות */}
+          <div className="p-3 bg-background/80 rounded-lg border border-border/60 text-xs flex justify-between items-center text-muted-foreground">
+            <div>
+              מיקום מוגדר: <strong className="text-foreground">{locationName}</strong>
+            </div>
+            <div dir="ltr" className="font-mono text-[11px]">
+              {lat.toFixed(4)}°N , {lng.toFixed(4)}°E
             </div>
           </div>
         </CardContent>
       </Card>
 
-      {/* רשימת וסתות */}
-      <div className="space-y-3">
-        {entries.map((entry, index) => (
-          <Card key={entry.id} className="border-gray-200">
-            <CardContent className="p-4">
-              <div className="flex items-start gap-3">
-                <div className="flex-1 space-y-3">
+      {/* ── רשימת הוסתות ── */}
+      <div className="space-y-4">
+        {entries.map((entry, idx) => {
+          // 🌟 שליפת הזמנים המדויקים מתוך מודול ה-zmanim המקצועי שלך!
+          let sunriseStr = '';
+          let sunsetStr = '';
+          
+          if (entry.date) {
+            try {
+              const zmanim = getZmanimForDate(new Date(entry.date), getCurrentLocationObject());
+              sunriseStr = formatTime(new Date(zmanim.sunrise));
+              sunsetStr = formatTime(new Date(zmanim.sunset));
+            } catch (e) {
+              console.error(e);
+            }
+          }
 
-                  {/* כותרת + תג עונה */}
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm font-semibold text-primary">
-                      וסת #{index + 1}
-                    </span>
-                    <OnahBadge onah={entry.onah} />
-                  </div>
-
-                  {/* תאריך + שעה בשורה אחת */}
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="block text-xs font-medium text-gray-600 mb-1">
-                        תאריך <span className="text-red-500">*</span>
-                      </label>
-                      <Input
-                        type="date"
-                        value={entry.date}
-                        max={new Date().toISOString().split('T')[0]}
-                        onChange={e => updateEntry(entry.id, { date: e.target.value })}
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-xs font-medium text-gray-600 mb-1">
-                        שעה <span className="text-red-500">*</span>
-                      </label>
-                      <Input
-                        type="time"
-                        value={entry.time}
-                        onChange={e => updateEntry(entry.id, { time: e.target.value })}
-                      />
-                    </div>
-                  </div>
-
-                  {/* הסבר מחושב */}
-                  {entry.date && entry.time && (
-                    <p className="text-xs text-muted-foreground">
-                      {entry.onah === 'day'
-                        ? `☀️ השעה ${entry.time} היא לאחר הזריחה ולפני השקיעה — עונת יום`
-                        : `🌙 השעה ${entry.time} היא לאחר השקיעה או לפני הזריחה — עונת לילה`}
-                    </p>
+          return (
+            <Card key={entry.id} className="border-border hover:shadow-sm transition-shadow">
+              <CardContent className="p-4 md:p-5 space-y-4">
+                
+                <div className="flex justify-between items-center border-b border-border/40 pb-2">
+                  <span className="text-sm font-bold text-foreground bg-secondary/60 px-2 py-0.5 rounded">
+                    ווסת {idx + 1}
+                  </span>
+                  {entries.length > 1 && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => removeEntry(entry.id)}
+                      className="text-destructive hover:text-destructive/90 hover:bg-destructive/10 h-8 px-2"
+                    >
+                      <Trash2 className="h-4 w-4 ml-1" />
+                      הסרה
+                    </Button>
                   )}
                 </div>
 
-                {/* מחיקה */}
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={() => removeEntry(entry.id)}
-                  className="text-destructive hover:text-destructive hover:bg-destructive/10 shrink-0 mt-6"
-                >
-                  <Trash2 className="h-4 w-4" />
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-        ))}
+                {/* שדות הוסת */}
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 items-end">
+                  <div>
+                    <label className="block text-xs font-medium mb-1.5 text-muted-foreground">תאריך תחילת הוסת</label>
+                    <Input
+                      type="date"
+                      value={entry.date}
+                      onChange={(e) => updateEntry(entry.id, { date: e.target.value })}
+                      required
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-medium mb-1.5 text-muted-foreground">שעת תחילת הוסת</label>
+                    <div className="relative">
+                      <Clock className="absolute left-3 top-3 h-4 w-4 text-muted-foreground/60 pointer-events-none" />
+                      <Input
+                        type="time"
+                        value={entry.time}
+                        onChange={(e) => updateEntry(entry.id, { time: e.target.value })}
+                        className="pl-9"
+                        required
+                      />
+                    </div>
+                  </div>
+
+                  <div className="bg-muted/50 rounded-md p-2 h-10 flex items-center justify-center border border-border/40">
+                    {entry.onah === 'day' ? (
+                      <span className="text-amber-600 font-medium text-xs sm:text-sm flex items-center gap-1.5">
+                        <Sun className="h-4 w-4" /> עונת היום (אוטומטי)
+                      </span>
+                    ) : (
+                      <span className="text-indigo-600 font-medium text-xs sm:text-sm flex items-center gap-1.5">
+                        <Moon className="h-4 w-4" /> עונת הלילה (אוטומטי)
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                {/* תצוגת הזמנים המדויקים מהמנוע ההלכתי שלך */}
+                {sunriseStr && sunsetStr && (
+                  <div className="text-[11px] text-muted-foreground/80 flex gap-4 pr-1">
+                    <span>🌅 זריחה הלכתית: {sunriseStr}</span>
+                    <span>🌇 שקיעה הלכתית: {sunsetStr}</span>
+                  </div>
+                )}
+
+                {/* כפתור טוגל להפסק טהרה */}
+                <div className="pt-1">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => toggleHefsekh(entry.id)}
+                    className={`text-xs h-8 ${entry.isHefsekhOpen ? 'bg-emerald-50 text-emerald-700' : 'text-primary'}`}
+                  >
+                    {entry.isHefsekhOpen ? '✕ סגרי הפסק טהרה' : '➕ הוסיפי הפסק טהרה לווסת זו'}
+                  </Button>
+                </div>
+
+                {/* אזור הזנת הפסק טהרה */}
+                {entry.isHefsekhOpen && entry.hefsekh && (
+                  <div className="p-3 bg-emerald-50/50 border border-emerald-100 rounded-lg space-y-3 mt-1">
+                    <div className="text-xs font-bold text-emerald-800">פרטי הפסק הטהרה:</div>
+                    
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 items-end">
+                      <div>
+                        <label className="block text-[11px] font-medium mb-1 text-emerald-700">תאריך הבדיקה</label>
+                        <Input
+                          type="date"
+                          value={entry.hefsekh.date}
+                          onChange={(e) => updateHefsekh(entry.id, { date: e.target.value })}
+                          className="bg-background border-emerald-200"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-[11px] font-medium mb-1 text-emerald-700">שעת הבדיקה</label>
+                        <Input
+                          type="time"
+                          value={entry.hefsekh.time}
+                          onChange={(e) => updateHefsekh(entry.id, { time: e.target.value })}
+                          className="bg-background border-emerald-200"
+                        />
+                      </div>
+
+                      <div className="bg-background rounded-md p-2 h-10 flex items-center justify-center border border-emerald-200">
+                        {entry.hefsekh.onah === 'day' ? (
+                          <span className="text-amber-600 font-medium text-xs flex items-center gap-1">
+                            <Sun className="h-3.5 w-3.5" /> עונת היום
+                          </span>
+                        ) : (
+                          <span className="text-indigo-600 font-medium text-xs flex items-center gap-1">
+                            <Moon className="h-3.5 w-3.5" /> עונת הלילה
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    {entry.hefsekh.onah === 'night' && (
+                      <div className="p-2 bg-amber-50 border border-amber-200 text-amber-800 rounded text-xs">
+                        ⚠️ <strong>שים לב:</strong> הבדיקה הוזנה בשעות הלילה (לאחר השקיעה). 
+                        הלכתית, הפסק טהרה צריך להתבצע ביום (לפני השקיעה) כדי לעלות למניין 7 נקיים.
+                      </div>
+                    )}
+                  </div>
+                )}
+
+              </CardContent>
+            </Card>
+          );
+        })}
       </div>
 
-      {/* כפתור הוספה */}
-      <Button
-        variant="outline"
-        onClick={addEntry}
-        className="w-full"
-        disabled={entries.length >= 6}
-      >
-        <Plus className="h-4 w-4 ml-2" />
-        {entries.length === 0 ? 'הוסיפי וסת ראשונה' : 'הוסיפי וסת נוספת'}
-      </Button>
+      {/* ── כפתורי פעולה ── */}
+      <div className="space-y-4 pt-2">
+        <Button
+          variant="outline"
+          onClick={addEntry}
+          className="w-full"
+          disabled={entries.length >= 6}
+        >
+          <Plus className="h-4 w-4 ml-2" />
+          {entries.length === 0 ? 'הוסיפי וסת ראשונה' : 'הוסיפי וסת נוספת'}
+        </Button>
 
-      {entries.length >= 6 && (
-        <p className="text-xs text-center text-muted-foreground">
-          ניתן להזין עד 6 וסתות בשלב זה
-        </p>
-      )}
-
-      {/* טיפ */}
-      <Card className="bg-blue-50 border-blue-200">
-        <CardContent className="p-3">
-          <div className="flex gap-2 items-start text-sm">
-            <span className="text-lg leading-none">💡</span>
-            <p className="text-muted-foreground">
-              ככל שתזיני יותר וסתות, החישובים יהיו מדויקים יותר.
-              מומלץ להזין לפחות <strong>2–3 וסתות</strong> לחישוב הפלגה.
-            </p>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* המשך */}
-      <Button
-        onClick={handleSubmit}
-        disabled={!hasValidEntries}
-        className="w-full"
-        size="lg"
-      >
-        המשך
-      </Button>
+        <Button onClick={handleSubmit} className="w-full bg-primary text-primary-foreground h-11 text-base font-medium">
+          שמירה והמשך בשלבי הקליטה
+        </Button>
+      </div>
     </div>
   );
 }

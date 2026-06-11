@@ -5,7 +5,7 @@
 'use client';
 export const dynamic = 'force-dynamic';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { CalendarGrid } from '@/components/calendar/CalendarGrid';
 import { AddVesetModal } from '@/components/calendar/AddVesetModal';
@@ -13,12 +13,13 @@ import { AddHefsekhModal } from '@/components/calendar/AddHefsekhModal';
 import { SidebarMenu } from '@/components/calendar/SidebarMenu';
 import { Button } from '@/components/ui/Button';
 import { Card, CardContent } from '@/components/ui/Card';
-import { Plus, Settings, LogOut, Menu, Bell, CalendarIcon } from 'lucide-react';
+import { Plus, Settings, LogOut, Menu, Bell, Info } from 'lucide-react';
 import { supabase, getCurrentUser, signOut } from '@/lib/supabase/client';
 import { getUserHistory, addVesetEvent } from '@/lib/supabase/vesatot';
 import { TaharaCalculator } from '@/lib/halacha/calculator';
 import { HalachicSettings, UserLocation, VesetHistory } from '@/types';
 import { useNotifications } from '@/hooks/useNotifications';
+import { getZmanimForDate, formatTime } from '@/lib/zmanim';
 
 export default function CalendarPage() {
   const router = useRouter();
@@ -110,6 +111,102 @@ export default function CalendarPage() {
     loadUserData();
   }, [loadUserData]);
 
+  // ─────────────────────────────────────────────────────────────
+  // חישוב והפקת הסטטוס של היום הנוכחי (היום בלונג-פורמט)
+  // ─────────────────────────────────────────────────────────────
+// חילוץ מידע מפורט על הסטטוס של היום הנוכחי (עבור ה-Card בראש העמוד)
+  const todayStatusInfo = useMemo(() => {
+    if (loading) return { label: 'טוען נתונים...', details: '', variant: 'loading' };
+    
+    const today = new Date();
+    const todayKey = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+    
+    const cd = calculatedDates?.get(todayKey);
+    if (!cd) return { label: 'אין מידע הלכתי ליום זה', details: 'נא להזין וסתות כדי לחשב', variant: 'normal' };
+
+    // הגדרת מיקום קבוע כברירת מחדל כדי למנוע קריסה ושגיאות Scope
+    const locationToUse: UserLocation = {
+      locationName: 'Rehovot',
+      latitude: 31.8928,
+      longitude: 34.8113,
+      timezone: 'Asia/Jerusalem'
+    };
+
+    // שליפת הזמנים האמיתיים
+    const dailyZmanim = getZmanimForDate(today, locationToUse);
+    
+    const sunriseStr = dailyZmanim?.sunrise ? formatTime(new Date(dailyZmanim.sunrise)) : '--:--';
+    const sunsetStr = dailyZmanim?.sunset ? formatTime(new Date(dailyZmanim.sunset)) : '--:--';
+
+    switch (cd.status) {
+      case 'prohibited': {
+        const vesetTypes = cd.vesetTypes?.map((t: string) => {
+          if (t === 'haflaga') return 'תאריך הפלגה';
+          if (t === 'yom_hachodesh') return 'יום החודש';
+          if (t === 'onah_beinonit') return 'עונה בינונית';
+          return t;
+        }).join(' + ') || 'עונת פרישה';
+
+        let timeRange = '';
+        const activeOnot = cd.activeOnot || [];
+
+        if (activeOnot.includes('night') && activeOnot.includes('day')) {
+          timeRange = `מעת לעת (משקיעה ${sunsetStr} עד שקיעה למחרת)`;
+        } else if (activeOnot.includes('night')) {
+          timeRange = `עונת לילה (משקיעה ${sunsetStr} עד זריחה ${sunriseStr})`;
+        } else if (activeOnot.includes('day')) {
+          timeRange = `עונת יום (מזריחה ${sunriseStr} עד שקיעה ${sunsetStr})`;
+        } else {
+          timeRange = `מזריחה ${sunriseStr} עד שקיעה ${sunsetStr}`;
+        }
+
+        return {
+          label: `יום פרישה (${vesetTypes})`,
+          details: `זמן הפרישה: ${timeRange}`,
+          variant: 'prohibited'
+        };
+      }
+      
+      case 'clean_day':
+        return {
+          label: `יום נקי (${cd.cleanDayNumber || 1} מתוך 7)`,
+          details: 'יש לבצע בדיקות בעונה זו כנדרש.',
+          variant: 'clean'
+        };
+        
+      case 'mikvah_night':
+        return {
+          label: 'ליל טבילה',
+          details: `הטבילה התקפה החל מצאת הכוכבים (שקיעה ב-${sunsetStr}).`,
+          variant: 'mikvah'
+        };
+        
+      case 'hefsekh_tahara':
+        return {
+          label: 'יום הפסק טהרה',
+          details: `יש לבצע בדיקת הפסק לפני השקיעה (${sunsetStr}).`,
+          variant: 'hefsekh'
+        };
+        
+      default:
+        return {
+          label: 'מותרת לביתה',
+          details: 'יום זה מותר על פי החישוב ההלכתי.',
+          variant: 'normal'
+        };
+    }
+  }, [calculatedDates, loading]); // <--- כאן הורדנו את userLocation מרשימת התלויות
+  // פונקציית עזר לעיצוב כרטיס הסטטוס לפי סוגו
+  const getCardStyles = (variant: string) => {
+    switch (variant) {
+      case 'prohibited': return 'bg-red-50 border-red-200 text-red-900 text-red-700';
+      case 'hefsek': return 'bg-emerald-50 border-emerald-200 text-emerald-900 text-emerald-700';
+      case 'clean': return 'bg-sky-50 border-sky-200 text-sky-900 text-sky-700';
+      case 'mikvah': return 'bg-indigo-50 border-indigo-200 text-indigo-900 text-indigo-700';
+      default: return 'bg-slate-50 border-slate-200 text-slate-900 text-slate-700';
+    }
+  };
+
   const handleAddVeset = async (data: any) => {
     if (!userId || !settings || !location) return;
     try {
@@ -175,7 +272,7 @@ export default function CalendarPage() {
 
       {/* Header מותאם רספונסיבית */}
       <header className="border-b bg-card sticky top-0 z-10 shadow-sm">
-        <div className="container mx-auto px-4 py-3 md:py-4 flex items-center justify-between">
+        <div className="container mx-auto px-4 py-3 md:py-4 flex items-center justtodayStatusInfoify-between">
           <div className="flex items-center gap-2 md:gap-3">
             <Button
               variant="ghost"
@@ -191,7 +288,6 @@ export default function CalendarPage() {
           </div>
 
           <div className="flex gap-1 md:gap-2 items-center">
-            {/* כפתור התראות מותאם */}
             <Button
               variant="ghost"
               size="icon"
@@ -207,7 +303,6 @@ export default function CalendarPage() {
               )}
             </Button>
 
-            {/* כפתורי הוספה - יוצגו ב-Header רק במסכים רחבים (מחשב) */}
             <div className="hidden md:flex gap-2">
               <Button variant="default" onClick={() => setShowAddModal(true)}>
                 <Plus className="h-5 w-5 ml-2" />
@@ -219,7 +314,6 @@ export default function CalendarPage() {
               </Button>
             </div>
 
-            {/* כפתורי ניווט והתנתקות */}
             <Button variant="ghost" size="icon" className="h-9 w-9 rounded-full" onClick={() => router.push('/settings')}>
               <Settings className="h-5 w-5 text-gray-600" />
             </Button>
@@ -232,15 +326,24 @@ export default function CalendarPage() {
 
       {/* תוכן מרכזי */}
       <main className="container mx-auto px-4 py-4 md:py-8">
-        {history.events.length > 0 && (
-          <Card className="mb-4 md:mb-6 bg-blue-50 border-blue-200 shadow-sm">
+        
+        {/* כרטיס סטטוס דינמי משודרג */}
+        {todayStatusInfo && (
+          <Card className={`mb-4 md:mb-6 shadow-sm border transition-all ${getCardStyles(todayStatusInfo.variant).split(' ').slice(0,2).join(' ')}`}>
             <CardContent className="p-3 md:p-4">
-              <div className="flex items-center gap-3">
-                <span className="text-xl md:text-2xl">ℹ️</span>
+              <div className="flex items-start gap-3">
+                <span className="text-xl md:text-2xl mt-0.5">
+                  {todayStatusInfo.variant === 'prohibited' ? '🚫' : 
+                   todayStatusInfo.variant === 'hefsek' ? '✅' : 
+                   todayStatusInfo.variant === 'clean' ? '🔵' : 
+                   todayStatusInfo.variant === 'mikvah' ? '💧' : 'ℹ️'}
+                </span>
                 <div>
-                  <p className="font-semibold text-sm md:text-base text-blue-900">סטטוס נוכחי</p>
-                  <p className="text-xs md:text-sm text-blue-700">
-                    הווסת האחרונה: {history.events[0]?.date.toLocaleDateString('he-IL')}
+                  <h3 className={`font-bold text-sm md:text-base ${getCardStyles(todayStatusInfo.variant).split(' ')[2]}`}>
+                    סטטוס נוכחי: {todayStatusInfo.label}
+                  </h3>
+                  <p className={`text-xs md:text-sm mt-0.5 ${getCardStyles(todayStatusInfo.variant).split(' ')[3]}`}>
+                    {todayStatusInfo.details}
                   </p>
                 </div>
               </div>
@@ -260,7 +363,7 @@ export default function CalendarPage() {
           </Card>
         )}
 
-        {/* גריד לוח השנה - הקומפוננטה הפנימית שלו צריכה לתמוך ברספונסיביות */}
+        {/* גריד לוח השנה */}
         <div className="overflow-x-auto rounded-xl shadow-sm border bg-white p-2 md:p-4">
           <CalendarGrid
             currentDate={new Date()}
@@ -272,9 +375,8 @@ export default function CalendarPage() {
         </div>
       </main>
 
-      {/* 📱 כפתורי פעולה צפים (FAB) לנייד בלבד - ממוקמים בתחתית המסך בצד שמאל */}
+      {/* כפתורי פעולה צפים (FAB) לנייד */}
       <div className="md:hidden fixed bottom-6 left-6 z-40 flex flex-col gap-3">
-        {/* כפתור הפסק טהרה צף */}
         <button
           onClick={() => setShowHefsekhModal(true)}
           className="flex items-center justify-center gap-2 bg-slate-100 hover:bg-slate-200 text-slate-800 font-medium px-4 py-3 rounded-full shadow-lg border border-slate-300 transition-transform active:scale-95 text-sm"
@@ -283,7 +385,6 @@ export default function CalendarPage() {
           <span>הפסק טהרה</span>
         </button>
 
-        {/* כפתור הוספת וסת צף ראשי */}
         <button
           onClick={() => setShowAddModal(true)}
           className="flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white font-medium px-5 py-3.5 rounded-full shadow-xl transition-transform active:scale-95 text-sm"
@@ -293,7 +394,7 @@ export default function CalendarPage() {
         </button>
       </div>
 
-      {/* מודאלים קיימים */}
+      {/* מודאלים */}
       <AddVesetModal
         isOpen={showAddModal}
         onClose={() => setShowAddModal(false)}

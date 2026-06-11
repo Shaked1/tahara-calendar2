@@ -68,3 +68,18 @@ CREATE INDEX IF NOT EXISTS idx_notifications_pending
 CREATE INDEX IF NOT EXISTS idx_notifications_type
   ON scheduled_notifications(type)
   WHERE sent = false;
+
+-- ─────────────────────────────────────────────
+-- התראות קפיצה באפליקציה (Push Notifications) - טבלה חדשה לניהול מנויים
+-- ─────────────────────────────────────────────
+  CREATE TABLE IF NOT EXISTS user_subscriptions (
+    id BIGSERIAL PRIMARY KEY,
+    user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+    subscription JSONB NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    CONSTRAINT unique_user_subscription UNIQUE (user_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_user_subscriptions_user_id 
+  ON user_subscriptions(user_id);
