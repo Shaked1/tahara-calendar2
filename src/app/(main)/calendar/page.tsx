@@ -13,13 +13,133 @@ import { AddHefsekhModal } from '@/components/calendar/AddHefsekhModal';
 import { SidebarMenu } from '@/components/calendar/SidebarMenu';
 import { Button } from '@/components/ui/Button';
 import { Card, CardContent } from '@/components/ui/Card';
-import { Plus, Settings, LogOut, Menu, Bell, Info } from 'lucide-react';
+import { Plus, Settings, LogOut, Menu, Bell } from 'lucide-react';
 import { supabase, getCurrentUser, signOut } from '@/lib/supabase/client';
 import { getUserHistory, addVesetEvent } from '@/lib/supabase/vesatot';
 import { TaharaCalculator } from '@/lib/halacha/calculator';
 import { HalachicSettings, UserLocation, VesetHistory } from '@/types';
 import { useNotifications } from '@/hooks/useNotifications';
 import { getZmanimForDate, formatTime } from '@/lib/zmanim';
+
+// ─────────────────────────────────────────────
+// טיפוס עבור פרטי הסטטוס
+// ─────────────────────────────────────────────
+
+interface TodayStatusInfo {
+  label: string;
+  sublabel?: string;       // שורה שנייה (למשל "יום 3 מתוך 7")
+  details: string;
+  variant: string;
+  icon: string;
+  timeRange?: string;      // שעות הפרישה (רלוונטי רק לימי פרישה)
+  onahLabel?: string;      // "עונת יום" / "עונת לילה" / "כל היום"
+}
+
+// ─────────────────────────────────────────────
+// פונקציות עזר לעיצוב הכרטיס
+// ─────────────────────────────────────────────
+
+function getCardStyles(variant: string): { bg: string; border: string; title: string; detail: string; badge: string } {
+  switch (variant) {
+    case 'prohibited':
+      return {
+        bg:     'bg-red-50',
+        border: 'border-red-200',
+        title:  'text-red-900',
+        detail: 'text-red-700',
+        badge:  'bg-red-100 text-red-800 border-red-300',
+      };
+    case 'hefsek':
+      return {
+        bg:     'bg-emerald-50',
+        border: 'border-emerald-200',
+        title:  'text-emerald-900',
+        detail: 'text-emerald-700',
+        badge:  'bg-emerald-100 text-emerald-800 border-emerald-300',
+      };
+    case 'clean':
+      return {
+        bg:     'bg-sky-50',
+        border: 'border-sky-200',
+        title:  'text-sky-900',
+        detail: 'text-sky-700',
+        badge:  'bg-sky-100 text-sky-800 border-sky-300',
+      };
+    case 'mikvah':
+      return {
+        bg:     'bg-indigo-50',
+        border: 'border-indigo-200',
+        title:  'text-indigo-900',
+        detail: 'text-indigo-700',
+        badge:  'bg-indigo-100 text-indigo-800 border-indigo-300',
+      };
+    default:
+      return {
+        bg:     'bg-slate-50',
+        border: 'border-slate-200',
+        title:  'text-slate-900',
+        detail: 'text-slate-600',
+        badge:  'bg-slate-100 text-slate-700 border-slate-300',
+      };
+  }
+}
+
+// ─────────────────────────────────────────────
+// קומפוננטת כרטיס סטטוס
+// ─────────────────────────────────────────────
+
+function TodayStatusCard({ info }: { info: TodayStatusInfo }) {
+  const s = getCardStyles(info.variant);
+
+  return (
+    <Card className={`mb-4 md:mb-6 shadow-sm border transition-all ${s.bg} ${s.border}`}>
+      <CardContent className="p-4 md:p-5">
+        <div className="flex items-start gap-3">
+          {/* אייקון */}
+          <span className="text-2xl md:text-3xl shrink-0 mt-0.5">{info.icon}</span>
+
+          {/* תוכן */}
+          <div className="flex-1 min-w-0">
+            {/* כותרת + badge עונה */}
+            <div className="flex flex-wrap items-center gap-2 mb-1">
+              <h3 className={`font-bold text-sm md:text-base ${s.title}`}>
+                {info.label}
+              </h3>
+              {info.sublabel && (
+                <span className={`text-xs font-semibold px-2 py-0.5 rounded-full border ${s.badge}`}>
+                  {info.sublabel}
+                </span>
+              )}
+            </div>
+
+            {/* פרטים ראשיים */}
+            {info.details && (
+              <p className={`text-xs md:text-sm ${s.detail}`}>{info.details}</p>
+            )}
+
+            {/* שעות פרישה — רק לימי איסור */}
+            {info.timeRange && (
+              <div className={`mt-2 flex flex-wrap items-center gap-2`}>
+                {info.onahLabel && (
+                  <span className={`text-xs font-bold px-2 py-0.5 rounded border ${s.badge}`}>
+                    {info.onahLabel}
+                  </span>
+                )}
+                <span className={`text-xs md:text-sm font-medium ${s.detail}`}>
+                  🕐 {info.timeRange}
+                </span>
+              </div>
+            )}
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+// ─────────────────────────────────────────────
+// הקומפוננטה הראשית
+// ─────────────────────────────────────────────
 
 export default function CalendarPage() {
   const router = useRouter();
@@ -57,11 +177,7 @@ export default function CalendarPage() {
   const loadUserData = useCallback(async () => {
     try {
       const user = await getCurrentUser();
-      if (!user) {
-        router.push('/login');
-        return;
-      }
-
+      if (!user) { router.push('/login'); return; }
       setUserId(user.id);
 
       const { data: profile, error: profileError } = await supabase
@@ -78,17 +194,17 @@ export default function CalendarPage() {
       }
 
       const userSettings: HalachicSettings = {
-        method: (profile as any).halachic_method,
-        orZarua: (profile as any).or_zarua,
-        yom31: (profile as any).yom_31,
+        method:   (profile as any).halachic_method,
+        orZarua:  (profile as any).or_zarua,
+        yom31:    (profile as any).yom_31,
         maatLeat: (profile as any).maat_leat,
       };
       setSettings(userSettings);
 
       const userLocation: UserLocation = {
-        latitude: parseFloat((profile as any).latitude),
-        longitude: parseFloat((profile as any).longitude),
-        timezone: (profile as any).timezone,
+        latitude:     parseFloat((profile as any).latitude),
+        longitude:    parseFloat((profile as any).longitude),
+        timezone:     (profile as any).timezone,
         locationName: (profile as any).location_name,
       };
       setLocation(userLocation);
@@ -107,107 +223,138 @@ export default function CalendarPage() {
     }
   }, [router, calculateDates]);
 
-  useEffect(() => {
-    loadUserData();
-  }, [loadUserData]);
+  useEffect(() => { loadUserData(); }, [loadUserData]);
 
-  // ─────────────────────────────────────────────────────────────
-  // חישוב והפקת הסטטוס של היום הנוכחי (היום בלונג-פורמט)
-  // ─────────────────────────────────────────────────────────────
-// חילוץ מידע מפורט על הסטטוס של היום הנוכחי (עבור ה-Card בראש העמוד)
-  const todayStatusInfo = useMemo(() => {
-    if (loading) return { label: 'טוען נתונים...', details: '', variant: 'loading' };
-    
+  // ─────────────────────────────────────────────
+  // חישוב סטטוס היום
+  // ─────────────────────────────────────────────
+
+  const todayStatusInfo = useMemo((): TodayStatusInfo => {
+    if (loading) return { label: 'טוען נתונים...', details: '', variant: 'loading', icon: '⏳' };
+
+    if (!location) return { label: 'אין מידע הלכתי', details: 'נא להשלים הגדרות מיקום', variant: 'normal', icon: 'ℹ️' };
+
     const today = new Date();
     const todayKey = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
-    
     const cd = calculatedDates?.get(todayKey);
-    if (!cd) return { label: 'אין מידע הלכתי ליום זה', details: 'נא להזין וסתות כדי לחשב', variant: 'normal' };
 
-    // הגדרת מיקום קבוע כברירת מחדל כדי למנוע קריסה ושגיאות Scope
-    const locationToUse: UserLocation = {
-      locationName: 'Rehovot',
-      latitude: 31.8928,
-      longitude: 34.8113,
-      timezone: 'Asia/Jerusalem'
-    };
+    // שליפת זמני יום לפי מיקום אמיתי של המשתמשת
+    let sunriseStr = '--:--';
+    let sunsetStr  = '--:--';
+    try {
+      const zmanim = getZmanimForDate(today, location);
+      sunriseStr = formatTime(new Date(zmanim.sunrise));
+      sunsetStr  = formatTime(new Date(zmanim.sunset));
+    } catch (e) {
+      console.error('zmanim error', e);
+    }
 
-    // שליפת הזמנים האמיתיים
-    const dailyZmanim = getZmanimForDate(today, locationToUse);
-    
-    const sunriseStr = dailyZmanim?.sunrise ? formatTime(new Date(dailyZmanim.sunrise)) : '--:--';
-    const sunsetStr = dailyZmanim?.sunset ? formatTime(new Date(dailyZmanim.sunset)) : '--:--';
+    if (!cd) {
+      return {
+        label:   'מותרת לביתה',
+        details: 'אין הגבלות הלכתיות ליום זה.',
+        variant: 'normal',
+        icon:    '✅',
+      };
+    }
 
-    switch (cd.status) {
-      case 'prohibited': {
-        const vesetTypes = cd.vesetTypes?.map((t: string) => {
-          if (t === 'haflaga') return 'תאריך הפלגה';
-          if (t === 'yom_hachodesh') return 'יום החודש';
-          if (t === 'onah_beinonit') return 'עונה בינונית';
-          return t;
-        }).join(' + ') || 'עונת פרישה';
+    // ── אסור ──
+    if (cd.status === 'prohibited') {
+      const activeOnot: string[] = cd.activeOnot ?? [];
+      const vesetTypes: string[] = cd.vesetTypes ?? [];
 
-        let timeRange = '';
-        const activeOnot = cd.activeOnot || [];
+      // תווית סוגי פרישה
+      const typeLabels: string[] = [];
+      if (vesetTypes.includes('actual_veset'))  typeLabels.push('ראיית וסת');
+      if (vesetTypes.includes('yom_hachodesh')) typeLabels.push('יום החודש');
+      if (vesetTypes.includes('yom_30'))        typeLabels.push('יום 30');
+      if (vesetTypes.includes('haflagah'))      typeLabels.push('הפלגה');
+      if (vesetTypes.includes('minimum_days'))  typeLabels.push('ימי נידה');
+      const reasonsArr: string[] = cd.reasons ?? (cd.reason ? [cd.reason] : []);
+      reasonsArr.forEach(r => {
+        if (r.includes('31') && !typeLabels.includes('יום 31'))               typeLabels.push('יום 31');
+        if (r.includes('מעת לעת') && !typeLabels.includes('מעת לעת'))         typeLabels.push('מעת לעת');
+        if (r.includes('אור זרוע') && !typeLabels.includes('אור זרוע'))       typeLabels.push('אור זרוע');
+      });
+      const typesLabel = typeLabels.length > 0 ? typeLabels.join(' + ') : 'עונת פרישה';
 
-        if (activeOnot.includes('night') && activeOnot.includes('day')) {
-          timeRange = `מעת לעת (משקיעה ${sunsetStr} עד שקיעה למחרת)`;
-        } else if (activeOnot.includes('night')) {
-          timeRange = `עונת לילה (משקיעה ${sunsetStr} עד זריחה ${sunriseStr})`;
-        } else if (activeOnot.includes('day')) {
-          timeRange = `עונת יום (מזריחה ${sunriseStr} עד שקיעה ${sunsetStr})`;
-        } else {
-          timeRange = `מזריחה ${sunriseStr} עד שקיעה ${sunsetStr}`;
-        }
+      // עונה ושעות
+      const bothOnot = activeOnot.includes('day') && activeOnot.includes('night');
+      const dayOnly  = activeOnot.includes('day') && !activeOnot.includes('night');
+      const nightOnly = activeOnot.includes('night') && !activeOnot.includes('day');
+      const unknown  = activeOnot.length === 0;
 
-        return {
-          label: `יום פרישה (${vesetTypes})`,
-          details: `זמן הפרישה: ${timeRange}`,
-          variant: 'prohibited'
-        };
+      let onahLabel: string;
+      let timeRange: string;
+
+      if (bothOnot || unknown) {
+        onahLabel = 'כל היום';
+        timeRange = `מזריחה (${sunriseStr}) עד זריחה למחרת`;
+      } else if (dayOnly) {
+        onahLabel = 'עונת יום';
+        timeRange = `מזריחה (${sunriseStr}) עד שקיעה (${sunsetStr})`;
+      } else {
+        // nightOnly
+        onahLabel = 'עונת לילה';
+        timeRange = `משקיעה (${sunsetStr}) עד זריחה למחרת (${sunriseStr})`;
       }
-      
-      case 'clean_day':
-        return {
-          label: `יום נקי (${cd.cleanDayNumber || 1} מתוך 7)`,
-          details: 'יש לבצע בדיקות בעונה זו כנדרש.',
-          variant: 'clean'
-        };
-        
-      case 'mikvah_night':
-        return {
-          label: 'ליל טבילה',
-          details: `הטבילה התקפה החל מצאת הכוכבים (שקיעה ב-${sunsetStr}).`,
-          variant: 'mikvah'
-        };
-        
-      case 'hefsekh_tahara':
-        return {
-          label: 'יום הפסק טהרה',
-          details: `יש לבצע בדיקת הפסק לפני השקיעה (${sunsetStr}).`,
-          variant: 'hefsekh'
-        };
-        
-      default:
-        return {
-          label: 'מותרת לביתה',
-          details: 'יום זה מותר על פי החישוב ההלכתי.',
-          variant: 'normal'
-        };
-    }
-  }, [calculatedDates, loading]); // <--- כאן הורדנו את userLocation מרשימת התלויות
 
-
-  // פונקציית עזר לעיצוב כרטיס הסטטוס לפי סוגו
-  const getCardStyles = (variant: string) => {
-    switch (variant) {
-      case 'prohibited': return 'bg-red-50 border-red-200 text-red-900 text-red-700';
-      case 'hefsek': return 'bg-emerald-50 border-emerald-200 text-emerald-900 text-emerald-700';
-      case 'clean': return 'bg-sky-50 border-sky-200 text-sky-900 text-sky-700';
-      case 'mikvah': return 'bg-indigo-50 border-indigo-200 text-indigo-900 text-indigo-700';
-      default: return 'bg-slate-50 border-slate-200 text-slate-900 text-slate-700';
+      return {
+        label:     'יום פרישה',
+        sublabel:  typesLabel,
+        details:   'יש לפרוש בזמן המצוין להלן.',
+        variant:   'prohibited',
+        icon:      '🚫',
+        onahLabel,
+        timeRange,
+      };
     }
-  };
+
+    // ── הפסק טהרה ──
+    if (cd.status === 'hefsek_day') {
+      return {
+        label:   'יום הפסק טהרה',
+        details: `יש לבצע בדיקת הפסק לפני השקיעה (${sunsetStr}).`,
+        variant: 'hefsek',
+        icon:    '🌿',
+      };
+    }
+
+    // ── יום נקי ──
+    if (cd.status === 'clean_day') {
+      const num = cd.cleanDayNumber ?? '?';
+      return {
+        label:    'יום נקי',
+        sublabel: `יום ${num} מתוך 7`,
+        details:  'יש לבצע בדיקות בוקר ואחר הצהריים כנדרש.',
+        variant:  'clean',
+        icon:     '🔵',
+      };
+    }
+
+    // ── ליל טבילה ──
+    if (cd.status === 'mikvah_night') {
+      return {
+        label:   'ליל טבילה',
+        sublabel: 'יום נקי 7',
+        details: `הטבילה תקפה החל מצאת הכוכבים — לאחר שקיעה (${sunsetStr}). טבילה כשרה ומבורכת! 💧`,
+        variant: 'mikvah',
+        icon:    '✨',
+      };
+    }
+
+    // ── מותר ──
+    return {
+      label:   'מותרת לביתה',
+      details: 'אין הגבלות הלכתיות ליום זה.',
+      variant: 'normal',
+      icon:    '✅',
+    };
+  }, [calculatedDates, loading, location]);
+
+  // ─────────────────────────────────────────────
+  // פעולות
+  // ─────────────────────────────────────────────
 
   const handleAddVeset = async (data: any) => {
     if (!userId || !settings || !location) return;
@@ -272,9 +419,9 @@ export default function CalendarPage() {
     <div className="min-h-screen bg-background relative overflow-x-hidden pb-24 md:pb-8">
       <SidebarMenu isOpen={isSidebarOpen} onClose={() => setIsSidebarOpen(false)} />
 
-      {/* Header מותאם רספונסיבית */}
+      {/* Header */}
       <header className="border-b bg-card sticky top-0 z-10 shadow-sm">
-        <div className="container mx-auto px-4 py-3 md:py-4 flex items-center justtodayStatusInfoify-between">
+        <div className="container mx-auto px-4 py-3 md:py-4 flex items-center justify-between">
           <div className="flex items-center gap-2 md:gap-3">
             <Button
               variant="ghost"
@@ -328,30 +475,9 @@ export default function CalendarPage() {
 
       {/* תוכן מרכזי */}
       <main className="container mx-auto px-4 py-4 md:py-8">
-        
-        {/* כרטיס סטטוס דינמי משודרג */}
-        {todayStatusInfo && (
-          <Card className={`mb-4 md:mb-6 shadow-sm border transition-all ${getCardStyles(todayStatusInfo.variant).split(' ').slice(0,2).join(' ')}`}>
-            <CardContent className="p-3 md:p-4">
-              <div className="flex items-start gap-3">
-                <span className="text-xl md:text-2xl mt-0.5">
-                  {todayStatusInfo.variant === 'prohibited' ? '🚫' : 
-                   todayStatusInfo.variant === 'hefsek' ? '✅' : 
-                   todayStatusInfo.variant === 'clean' ? '🔵' : 
-                   todayStatusInfo.variant === 'mikvah' ? '💧' : 'ℹ️'}
-                </span>
-                <div>
-                  <h3 className={`font-bold text-sm md:text-base ${getCardStyles(todayStatusInfo.variant).split(' ')[2]}`}>
-                    סטטוס נוכחי: {todayStatusInfo.label}
-                  </h3>
-                  <p className={`text-xs md:text-sm mt-0.5 ${getCardStyles(todayStatusInfo.variant).split(' ')[3]}`}>
-                    {todayStatusInfo.details}
-                  </p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        )}
+
+        {/* כרטיס סטטוס */}
+        <TodayStatusCard info={todayStatusInfo} />
 
         {history.events.length === 0 && (
           <Card className="mb-4 md:mb-6 bg-yellow-50 border-yellow-200 shadow-sm">
@@ -370,14 +496,12 @@ export default function CalendarPage() {
           <CalendarGrid
             currentDate={new Date()}
             calculatedDates={calculatedDates}
-            onDateClick={(day) => {
-              console.log('Clicked:', day);
-            }}
+            onDateClick={(day) => console.log('Clicked:', day)}
           />
         </div>
       </main>
 
-      {/* כפתורי פעולה צפים (FAB) לנייד */}
+      {/* כפתורי FAB לנייד */}
       <div className="md:hidden fixed bottom-6 left-6 z-40 flex flex-col gap-3">
         <button
           onClick={() => setShowHefsekhModal(true)}
@@ -386,7 +510,6 @@ export default function CalendarPage() {
           <Plus className="h-4 w-4" />
           <span>הפסק טהרה</span>
         </button>
-
         <button
           onClick={() => setShowAddModal(true)}
           className="flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white font-medium px-5 py-3.5 rounded-full shadow-xl transition-transform active:scale-95 text-sm"
@@ -403,7 +526,6 @@ export default function CalendarPage() {
         onSubmit={handleAddVeset}
         location={location || undefined}
       />
-
       <AddHefsekhModal
         isOpen={showHefsekhModal}
         onClose={() => setShowHefsekhModal(false)}
