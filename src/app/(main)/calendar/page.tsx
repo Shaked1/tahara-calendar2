@@ -197,7 +197,7 @@ export default function CalendarPage() {
     }
   }, [calculatedDates, loading]); // <--- כאן הורדנו את userLocation מרשימת התלויות
 
-  
+
   // פונקציית עזר לעיצוב כרטיס הסטטוס לפי סוגו
   const getCardStyles = (variant: string) => {
     switch (variant) {
@@ -289,7 +289,7 @@ export default function CalendarPage() {
             </h1>
           </div>
 
-          <div className="flex gap-1 md:gap-2 items-center">
+          <div className="flex w-full justify-end gap-1 md:gap-2 items-center">
             <Button
               variant="ghost"
               size="icon"
