@@ -242,6 +242,29 @@ export interface Database {
           created_at?: string;
         };
       };
+      user_subscriptions: {
+        Row: {
+          id: number;
+          user_id: string;
+          subscription: any; // או ספציפית: PushSubscriptionJSON אם הטיפוס מיובא
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: number;
+          user_id: string;
+          subscription: any;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: number;
+          user_id?: string;
+          subscription?: any;
+          created_at?: string;
+          updated_at?: string;
+        };
+      };
     };
     Views: {
       [_ in never]: never;

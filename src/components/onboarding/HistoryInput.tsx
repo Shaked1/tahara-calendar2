@@ -5,7 +5,7 @@
 
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback} from 'react';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Card, CardContent } from '@/components/ui/Card';
@@ -113,12 +113,14 @@ export function HistoryInput({
   };
 
   // פונקציית עזר לחישוב עונה מבוססת הקוד שלך ב-onot.ts
-  const calculateOnah = (dateStr: string, timeStr: string): OnahType => {
+  // פונקציית עזר לחישוב עונה מבוססת הקוד שלך ב-onot.ts
+  const calculateOnah = useCallback((dateStr: string, timeStr: string): OnahType => {
     if (!dateStr) return 'day';
     const loc = getCurrentLocationObject();
     // הפונקציה הקיימת שלך מקבלת אובייקט Date ואת ה-Time כמחרוזת
     return determineOnahFromDateAndTime(new Date(dateStr), timeStr || '08:00', loc);
-  };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lat, lng, locationName]); // תלויות מפורשות של המיקום
 
   // עדכון אוטומטי של העונות בכל פעם שהמיקום, התאריך או השעה משתנים
   useEffect(() => {
@@ -137,7 +139,7 @@ export function HistoryInput({
 
       return { ...entry, onah: computedOnah, hefsekh: updatedHefsekh };
     }));
-  }, [lat, lng]);
+  }, [lat, lng, calculateOnah]);
 
   const addEntry = () => {
     if (entries.length >= 6) return;

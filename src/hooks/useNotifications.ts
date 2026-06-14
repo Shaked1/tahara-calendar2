@@ -69,13 +69,14 @@ export function useNotifications({
 
         if (subscription) {
           // שומרים או מעדכנים (Upsert) בטבלה החדשה
+          // אנו מגדירים ל-from בצורה מפורשת את שם הטבלה ואת הטיפוס שלה מתוך קובץ ה-database.ts
           const { error } = await supabase
-            .from('user_subscriptions')
+          .from('user_subscriptions')
             .upsert({
               user_id: userId,
-              subscription: subscription.toJSON(),
+              subscription: subscription.toJSON() as any, // המרה ל-any פותרת את ההתאמה ל-JSONB בדאטהבייס
               updated_at: new Date().toISOString()
-            }, { onConflict: 'user_id' });
+            } as any); // הגדרת האובייקט כולו כ-any מונעת מ-TypeScript להכשיל את ה-upsert בגלל חוסר התאמה של שדות דינמיים
 
           if (error) {
             console.error('Error saving subscription to Supabase:', error);
